@@ -253,6 +253,28 @@ impl<'a> Ui<'a> {
         }
         if let Phase::Result(card) = &session.play.phase {
             self.feedback(session, card);
+        } else if let Phase::Flight(flight) = &session.play.phase {
+            let h = screen_height();
+            self.panel(Rect::new(x, h - 89.0 * s, 195.0 * s, 68.0 * s));
+            let label = if flight.cleared_fence {
+                "ホームラン"
+            } else {
+                "飛距離"
+            };
+            self.text(
+                label,
+                x + 13.0 * s,
+                h - 64.0 * s,
+                17.0,
+                if flight.cleared_fence { AMBER } else { MUTED },
+            );
+            self.text(
+                &format!("{:.0} m", flight.position.xz().length()),
+                x + 13.0 * s,
+                h - 30.0 * s,
+                26.0,
+                CREAM,
+            );
         } else if matches!(session.play.phase, Phase::Pitch) {
             let hint = if session.play.aim.held {
                 "離してスイング"
