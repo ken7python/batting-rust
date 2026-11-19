@@ -150,6 +150,18 @@ impl PitchKind {
             Self::Knuckleball => ((0.68, 0.84), vec2(0.012, 0.105), vec2(-0.022, 0.112)),
         }
     }
+
+    fn preview_direction(self) -> Vec2 {
+        match self {
+            Self::Fastball => Vec2::ZERO,
+            Self::Slider | Self::Cutter | Self::Sweeper => Vec2::NEG_X,
+            Self::TwoSeam => Vec2::X,
+            Self::Forkball | Self::Splitter | Self::Knuckleball => Vec2::NEG_Y,
+            Self::Curve => vec2(-0.32, -1.0),
+            Self::Changeup => vec2(0.6, -1.0),
+            Self::Sinker => vec2(1.0, -1.0),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -327,37 +339,19 @@ impl Pitch {
 
     pub fn preview_point(self, elapsed: f64) -> Vec3 {
         let end = self.bounce_time.unwrap_or(self.duration);
+        let finish = self.position(end);
         if self.kind == PitchKind::Fastball || elapsed >= end {
-            return self.position(end);
+            return finish;
         }
-
-        let now = (elapsed / self.duration).max(0.0) as f32;
-        let previous = (now - 0.015).max(0.0);
-        let sample_end = now.max(0.006);
-        let bend = self.break_at(now);
-        let direction =
-            (self.break_at(sample_end) - self.break_at(previous)) / (sample_end - previous);
-        // Project the break observed so far forward while retaining the baseline drop.
-        let forecast = |t: f32| {
-            let projected_break = (bend + direction * (t - now)).clamp_length_max(1.0);
-            self.baseline_at(t) + (projected_break * (ZONE_MAX - ZONE_MIN)).extend(0.0)
-        };
-        let plate = forecast(1.0);
-        if plate.y >= BALL_RADIUS {
-            return plate;
-        }
-
-        let (mut low, mut high) = (now, 1.0);
-        for _ in 0..16 {
-            let middle = (low + high) * 0.5;
-            if forecast(middle).y <= BALL_RADIUS {
-                high = middle;
-            } else {
-                low = middle;
-            }
-        }
-        let bounce = forecast(high);
-        vec3(bounce.x, BALL_RADIUS, bounce.z)
+        let mut direction = self.kind.preview_direction().normalize_or_zero();
+        let (_, early, late) = self.kind.profile();
+        let distance =
+            (-(early + late).dot(direction) * self.break_size.multiplier()).clamp(0.0, 0.50);
+        direction.x *= self.delivery.hand.sign();
+        let progress = (elapsed / end).max(0.0) as f32;
+        let remaining = 1.0 - progress * progress;
+        let shift = direction * (distance * remaining) * (ZONE_MAX - ZONE_MIN);
+        finish - shift.extend(0.0)
     }
 
     fn baseline_at(self, t: f32) -> Vec3 {
@@ -602,37 +596,48 @@ mod tests {
     }
 
     #[test]
-    fn preview_updates_for_a_slider_and_reaches_the_plate_crossing() {
-        let make = |kind| {
-            Pitch::new(
-                kind,
-                Delivery::default(),
-                CENTER,
-                PitchSpeed::Normal,
-                0.5,
-                BreakSize::Normal,
-            )
-        };
-        let slider = make(PitchKind::Slider);
-        let early = slider.preview_point(0.0);
-        let midflight = slider.preview_point(slider.duration * 0.55);
-        assert_eq!(early.z, 0.0);
-        assert_eq!(midflight.z, 0.0);
-        assert!(early.distance(midflight) > 0.05);
-        assert_ne!(early.truncate(), CENTER);
-        assert!(
-            slider
-                .preview_point(slider.duration * 0.999)
-                .distance(CENTER.extend(0.0))
-                < 0.005
+    fn preview_moves_in_one_direction_and_finishes_at_the_plate() {
+        for hand in [ThrowingHand::Right, ThrowingHand::Left] {
+            for (kind, expected) in [
+                (PitchKind::Forkball, Vec2::NEG_Y),
+                (PitchKind::Slider, vec2(-hand.sign(), 0.0)),
+                (PitchKind::Sinker, vec2(hand.sign(), -1.0)),
+            ] {
+                let pitch = Pitch::new(
+                    kind,
+                    Delivery {
+                        hand,
+                        ..Delivery::default()
+                    },
+                    CENTER,
+                    PitchSpeed::Normal,
+                    0.5,
+                    BreakSize::Normal,
+                );
+                let start = pitch.preview_point(0.0).truncate();
+                let finish = pitch.preview_point(pitch.duration);
+                assert!(finish.abs_diff_eq(CENTER.extend(0.0), 1e-5));
+                let direction = (finish.truncate() - start).normalize();
+                assert!(direction.dot(expected.normalize()) > 0.97);
+                let mut last = 0.0;
+                for frame in 1..=20 {
+                    let point = pitch.preview_point(pitch.duration * f64::from(frame) / 20.0);
+                    let offset = point.truncate() - start;
+                    assert!(offset.perp_dot(direction).abs() < 1e-5);
+                    let along = offset.dot(direction);
+                    assert!(along > last);
+                    last = along;
+                }
+            }
+        }
+        let fastball = Pitch::new(
+            PitchKind::Fastball,
+            Delivery::default(),
+            CENTER,
+            PitchSpeed::Normal,
+            0.5,
+            BreakSize::Normal,
         );
-        assert!(
-            slider
-                .preview_point(slider.duration)
-                .abs_diff_eq(CENTER.extend(0.0), 1e-5)
-        );
-
-        let fastball = make(PitchKind::Fastball);
         assert_eq!(
             fastball.preview_point(0.0),
             fastball.preview_point(fastball.duration * 0.8)
