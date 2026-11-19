@@ -59,7 +59,7 @@ impl Play {
                 }
                 let evaluated = self
                     .aim
-                    .swing
+                    .live_swing()
                     .map(|s| grade(s, self.pitch.duration, self.pitch.crossing));
                 let bounced = self.pitch.bounce_time.is_some();
                 if let Some(hit) = evaluated.filter(|g| !bounced && g.contact != Contact::Miss) {
@@ -97,5 +97,76 @@ impl Play {
             landing,
         });
         self.result_time = 0.0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::batting::{CENTER, SWING_LEAD};
+    use crate::pitch::{PitchKind, PitchSpeed, ThrowingHand};
+
+    fn fastball() -> Play {
+        Play::new(Pitch::new(
+            PitchKind::Fastball,
+            ThrowingHand::Right,
+            CENTER,
+            PitchSpeed::Normal,
+            0.5,
+        ))
+    }
+
+    #[test]
+    fn repeated_warmups_allow_a_live_hit_or_a_called_strike() {
+        for take in [false, true] {
+            let mut play = fastball();
+            for time in [-0.55, -0.32, -0.001] {
+                play.advance(time - play.time);
+                play.aim.press();
+                assert!(play.aim.release(play.time));
+                assert!(play.aim.live_swing().is_none());
+            }
+            if take {
+                play.advance(play.pitch.end_time() - play.time + 0.001);
+                assert!(matches!(
+                    play.phase,
+                    Phase::Result(ResultCard {
+                        outcome: Outcome::Strike,
+                        grade: None,
+                        ..
+                    })
+                ));
+            } else {
+                // Begin holding during the windup, then release at the ideal live timing.
+                play.aim.press();
+                play.advance(play.pitch.duration - SWING_LEAD - play.time);
+                assert!(play.aim.release(play.time));
+                play.advance(SWING_LEAD + 0.001);
+                assert!(matches!(play.phase, Phase::Flight(_)));
+            }
+        }
+    }
+
+    #[test]
+    fn a_swing_at_release_counts_once_and_resets_for_the_next_windup() {
+        let mut play = fastball();
+        play.aim.press();
+        play.advance(WINDUP);
+        assert!(play.aim.release(play.time));
+        play.aim.press();
+        assert!(!play.aim.release(0.25));
+        assert_eq!(play.aim.live_swing().unwrap().time, 0.0);
+        play.advance(play.pitch.end_time() + 0.001);
+        assert!(matches!(
+            play.phase,
+            Phase::Result(ResultCard {
+                outcome: Outcome::Whiff,
+                ..
+            })
+        ));
+        play.next_pitch(play.pitch);
+        play.aim.press();
+        assert!(play.aim.release(play.time));
+        assert!(play.aim.live_swing().is_none());
     }
 }
