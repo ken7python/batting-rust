@@ -1,6 +1,7 @@
 use macroquad::prelude::*;
 
 use crate::batting::{BALL_RADIUS, Contact, Grade, MEET_RADIUS};
+use crate::defense::{Defense, FIRST_BASE, Fielder};
 use crate::park::Park;
 
 pub const STEP: f64 = 1.0 / 120.0;
@@ -10,6 +11,8 @@ pub enum Outcome {
     Homer,
     HardFair,
     Fair,
+    FlyOut(Fielder),
+    GroundOut(Fielder),
     Foul,
     Whiff,
     Strike,
@@ -20,12 +23,21 @@ impl Outcome {
     pub fn label(self) -> &'static str {
         match self {
             Self::Homer => "ホームラン",
-            Self::HardFair => "強いフェア打球",
-            Self::Fair => "フェア打球",
+            Self::HardFair => "強いヒット",
+            Self::Fair => "ヒット",
+            Self::FlyOut(_) => "フライアウト",
+            Self::GroundOut(_) => "内野ゴロアウト",
             Self::Foul => "ファウル",
             Self::Whiff => "空振り",
             Self::Strike => "見送りストライク",
             Self::Ball => "見送りボール",
+        }
+    }
+
+    pub fn fielder(self) -> Option<Fielder> {
+        match self {
+            Self::FlyOut(fielder) | Self::GroundOut(fielder) => Some(fielder),
+            _ => None,
         }
     }
 }
@@ -36,7 +48,9 @@ pub struct Flight {
     pub elapsed: f32,
     pub strong: bool,
     pub cleared_fence: bool,
+    pub defense: Defense,
     park: Park,
+    rolling_for: Option<f32>,
     accumulator: f64,
 }
 
@@ -66,7 +80,9 @@ impl Flight {
             elapsed: 0.0,
             strong,
             cleared_fence: false,
+            defense: Defense::new(park),
             park,
+            rolling_for: None,
             accumulator: 0.0,
         }
     }
@@ -84,11 +100,14 @@ impl Flight {
 
     fn step(&mut self) -> Option<Outcome> {
         let dt = STEP as f32;
+        self.elapsed += dt;
+        if let Some(rolling_for) = self.rolling_for {
+            return self.roll(dt, rolling_for);
+        }
         let old = self.position;
         self.velocity +=
             (vec3(0.0, -9.81, 0.0) - self.velocity * self.velocity.length() * 0.0032) * dt;
         let next = old + self.velocity * dt;
-        self.elapsed += dt;
 
         let (fence_radius, fence_height) = self.park.fence();
         let radius_sq = |p: Vec3| p.x * p.x + p.z * p.z;
@@ -117,24 +136,70 @@ impl Flight {
                 self.cleared_fence = true;
             } else {
                 self.position = crossing;
-                return Some(self.landed(crossing));
+                return Some(if fair(crossing) {
+                    self.hit()
+                } else {
+                    Outcome::Foul
+                });
+            }
+        }
+        if !self.cleared_fence {
+            let reachable = old.lerp(next, ground.unwrap_or(1.0));
+            if fair(reachable) {
+                self.defense
+                    .chase(reachable, self.velocity, self.elapsed, dt, false);
+                if self.velocity.y < 0.0
+                    && (0.45..=2.35).contains(&reachable.y)
+                    && let Some(fielder) = self.defense.within_reach(reachable.xz(), 1.05)
+                {
+                    self.position = reachable;
+                    return Some(Outcome::FlyOut(fielder));
+                }
             }
         }
         if let Some(fraction) = ground {
             let point = old.lerp(next, fraction);
             self.position = point;
-            return Some(self.landed(point));
+            if self.cleared_fence {
+                return Some(Outcome::Homer);
+            }
+            if !fair(point) {
+                return Some(Outcome::Foul);
+            }
+            self.velocity = vec3(self.velocity.x * 0.73, 0.0, self.velocity.z * 0.73);
+            self.rolling_for = Some(0.0);
+            return None;
         }
         self.position = next;
         None
     }
 
-    fn landed(&self, point: Vec3) -> Outcome {
-        if self.cleared_fence {
-            Outcome::Homer
-        } else if !fair(point) {
-            Outcome::Foul
-        } else if self.strong {
+    fn roll(&mut self, dt: f32, rolling_for: f32) -> Option<Outcome> {
+        self.position += self.velocity * dt;
+        self.velocity *= 1.0 - 1.25 * dt;
+        self.rolling_for = Some(rolling_for + dt);
+        let fence_radius = self.park.fence().0;
+        if self.position.xz().length_squared() >= fence_radius * fence_radius {
+            let stop = self.position.xz().normalize() * fence_radius;
+            self.position = vec3(stop.x, BALL_RADIUS, stop.y);
+            return Some(self.hit());
+        }
+        self.defense
+            .chase(self.position, self.velocity, self.elapsed, dt, true);
+        if let Some(fielder) = self.defense.within_reach(self.position.xz(), 1.05) {
+            let time_at_first =
+                self.elapsed + 0.42 + self.position.xz().distance(FIRST_BASE) / 26.0;
+            return Some(if fielder.infield() && time_at_first < 4.25 {
+                Outcome::GroundOut(fielder)
+            } else {
+                self.hit()
+            });
+        }
+        (rolling_for + dt >= 2.2 || self.velocity.length_squared() < 1.5).then(|| self.hit())
+    }
+
+    fn hit(&self) -> Outcome {
+        if self.strong {
             Outcome::HardFair
         } else {
             Outcome::Fair
@@ -238,10 +303,68 @@ mod tests {
                     assert_eq!(outcome, Outcome::Homer);
                 } else {
                     assert_eq!(hit.contact, Contact::Touch);
-                    assert_eq!(outcome, Outcome::Fair);
+                    assert!(matches!(
+                        outcome,
+                        Outcome::Fair | Outcome::FlyOut(_) | Outcome::GroundOut(_)
+                    ));
                     assert!(end.xz().length() < park.fence().0 - 5.0);
                 }
             }
+        }
+    }
+
+    #[test]
+    fn a_fly_to_the_center_fielder_is_caught_but_a_gap_shot_is_a_hit() {
+        for (position, velocity, expected) in [
+            (
+                vec3(3.8, 5.5, -53.0),
+                vec3(0.0, -2.0, -7.0),
+                Outcome::FlyOut(Fielder::Center),
+            ),
+            (
+                vec3(16.0, 2.8, -38.0),
+                vec3(0.0, -5.0, -20.0),
+                Outcome::Fair,
+            ),
+        ] {
+            let mut flight = Flight::new(
+                CENTER,
+                Grade {
+                    contact: Contact::Touch,
+                    timing: 0.0,
+                    offset: Vec2::ZERO,
+                },
+                Park::Central,
+            );
+            flight.position = position;
+            flight.velocity = velocity;
+            flight.elapsed = 1.0;
+            let outcome = (0..480).find_map(|_| flight.advance(STEP));
+            assert_eq!(outcome, Some(expected));
+        }
+    }
+
+    #[test]
+    fn a_grounder_is_an_out_only_when_the_throw_would_beat_the_batter() {
+        for (elapsed, expected) in [
+            (1.1, Outcome::GroundOut(Fielder::Second)),
+            (4.0, Outcome::Fair),
+        ] {
+            let mut flight = Flight::new(
+                CENTER,
+                Grade {
+                    contact: Contact::Touch,
+                    timing: 0.0,
+                    offset: Vec2::ZERO,
+                },
+                Park::Central,
+            );
+            flight.position = vec3(10.4, BALL_RADIUS, -24.0);
+            flight.velocity = vec3(0.0, 0.0, -13.0);
+            flight.rolling_for = Some(0.0);
+            flight.elapsed = elapsed;
+            let outcome = (0..150).find_map(|_| flight.advance(STEP));
+            assert_eq!(outcome, Some(expected));
         }
     }
 

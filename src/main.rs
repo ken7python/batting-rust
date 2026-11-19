@@ -1,4 +1,5 @@
 mod batting;
+mod defense;
 mod flight;
 mod park;
 mod pitch;
@@ -8,12 +9,13 @@ mod session;
 mod sound;
 mod ui;
 
+use defense::Defense;
 use macroquad::input::utils::{register_input_subscriber, repeat_all_miniquad_input};
 use macroquad::miniquad::EventHandler;
 use macroquad::prelude::*;
 use park::Park;
 use pitch::Delivery;
-use play::{Phase, Play};
+use play::{Phase, Play, ResultCard};
 use scene::*;
 use session::{Mode, Record, Session};
 use sound::Sounds;
@@ -21,7 +23,7 @@ use ui::{Action, Settings, Ui};
 
 enum Screen {
     Menu,
-    Game(Session),
+    Game(Box<Session>),
     Summary(Record),
 }
 
@@ -164,22 +166,22 @@ async fn main() {
         if let Some(action) = action {
             match action {
                 Action::Challenge => {
-                    screen = Screen::Game(Session::new(
+                    screen = Screen::Game(Box::new(Session::new(
                         Mode::Challenge,
                         settings.delivery,
                         settings.speed,
                         settings.park,
                         settings.pitch_mix,
-                    ))
+                    )))
                 }
                 Action::Practice => {
-                    screen = Screen::Game(Session::new(
+                    screen = Screen::Game(Box::new(Session::new(
                         settings.practice(),
                         settings.delivery,
                         settings.speed,
                         settings.park,
                         settings.pitch_mix,
-                    ))
+                    )))
                 }
                 Action::Menu => screen = Screen::Menu,
                 Action::Pitch
@@ -209,6 +211,7 @@ async fn main() {
 fn draw_idle(camera: &Camera3D, delivery: Delivery, park: Park) {
     set_camera(camera);
     field(park);
+    fielders(&Defense::new(park));
     pitcher(-batting::WINDUP, delivery);
     set_default_camera();
 }
@@ -219,6 +222,7 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: bool) {
             let follow = flight_camera(flight.position, flight.velocity, flight.elapsed);
             set_camera(&follow);
             field(play.park);
+            fielders(&flight.defense);
             let trail_step = flight.elapsed.min(0.13) / 7.0;
             for i in 0..7 {
                 let start = flight.position - flight.velocity * (i as f32 * trail_step);
@@ -231,9 +235,21 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: bool) {
             }
             ball(flight.position);
         }
+        Phase::Result(ResultCard {
+            fielding: Some(view),
+            landing: Some(position),
+            ..
+        }) => {
+            let follow = flight_camera(*position, view.velocity, view.elapsed);
+            set_camera(&follow);
+            field(play.park);
+            fielders(&view.defense);
+            ball(*position);
+        }
         _ => {
             set_camera(camera);
             field(play.park);
+            fielders(&Defense::new(play.park));
             pitcher(play.time, play.pitch.delivery);
             bat(play.time, &play.aim);
             if matches!(play.phase, Phase::Pitch) && play.time >= 0.0 {
@@ -257,7 +273,7 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: bool) {
                 draw_circle(p.x, p.y, radius, color);
             }
         }
-        Phase::Result(_) => {
+        Phase::Result(card) if card.fielding.is_none() => {
             if play.pitch.bounce_time.is_none() {
                 let p = project(camera, on_plate(play.pitch.crossing));
                 draw_circle(p.x, p.y, 4.5, GOLD);
@@ -268,6 +284,6 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: bool) {
                 draw_line(p.x, p.y - 7.0, p.x, p.y + 7.0, 2.0, AIM_GREEN);
             }
         }
-        Phase::Flight(_) => {}
+        Phase::Flight(_) | Phase::Result(_) => {}
     }
 }

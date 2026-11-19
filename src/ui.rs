@@ -437,9 +437,10 @@ impl<'a> Ui<'a> {
         let distance = result
             .landing
             .map_or_else(String::new, |p| format!("   {:.0} m", p.xz().length()));
+        let fielder = result.outcome.fielder().map_or("", |role| role.label());
         self.text(
             &format!(
-                "{pitch}  {:.0} km/h{location}",
+                "{pitch}  {:.0} km/h{location}  {fielder}",
                 session.play.pitch.average_kmh()
             ),
             x + 15.0 * s,
@@ -488,10 +489,7 @@ impl<'a> Ui<'a> {
             AMBER,
         );
         self.text(
-            &format!(
-                "フェア打球  {}    本塁打  {}",
-                record.fair, record.home_runs
-            ),
+            &format!("安打  {}    本塁打  {}", record.fair, record.home_runs),
             x + 23.0 * s,
             y + 189.0 * s,
             21.0,

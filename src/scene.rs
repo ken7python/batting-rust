@@ -2,6 +2,7 @@ use macroquad::camera::Camera;
 use macroquad::prelude::*;
 
 use crate::batting::*;
+use crate::defense::{Defense, FIRST_BASE, Fielder};
 use crate::park::Park;
 use crate::pitch::{Delivery, PitchForm};
 
@@ -112,7 +113,7 @@ pub fn field(park: Park) {
     );
 
     let plate = vec3(0.0, 0.032, 0.0);
-    let first = vec3(19.4, 0.032, -19.4);
+    let first = vec3(FIRST_BASE.x, 0.032, FIRST_BASE.y);
     let third = vec3(-19.4, 0.032, -19.4);
     let second = vec3(0.0, 0.032, -38.8);
     for (a, b) in [
@@ -179,6 +180,42 @@ pub fn field(park: Park) {
                 back(a) + Vec3::Y * 8.0,
             ],
             seats[i % 2],
+        );
+    }
+}
+
+pub fn fielders(defense: &Defense) {
+    let jersey = Color::from_rgba(52, 113, 201, 255);
+    let skin = Color::from_rgba(216, 165, 118, 255);
+    for (role, point) in Fielder::ALL.into_iter().zip(defense.positions) {
+        let feet = vec3(point.x, 0.0, point.y);
+        let chasing = defense.chasing == Some(role);
+        draw_cube(
+            feet + vec3(0.0, 1.12, 0.0),
+            vec3(0.48, 0.59, 0.27),
+            None,
+            jersey,
+        );
+        draw_sphere(feet + vec3(0.0, 1.62, 0.02), 0.15, None, skin);
+        draw_cube(
+            feet + vec3(0.0, 1.73, 0.04),
+            vec3(0.34, 0.10, 0.32),
+            None,
+            jersey,
+        );
+        for side in [-1.0, 1.0] {
+            draw_cube(
+                feet + vec3(side * 0.14, 0.48, 0.0),
+                vec3(0.19, 0.9, 0.21),
+                None,
+                WHITE,
+            );
+        }
+        draw_cube(
+            feet + vec3(0.35, if chasing { 1.28 } else { 0.83 }, 0.08),
+            vec3(0.25, 0.27, 0.21),
+            None,
+            if chasing { GOLD } else { BROWN },
         );
     }
 }
