@@ -1,6 +1,7 @@
 use macroquad::prelude::*;
 
 use crate::batting::{Aim, Contact, Grade, WINDUP, grade, in_zone};
+use crate::defense::Defense;
 use crate::flight::{Flight, Outcome};
 use crate::park::Park;
 use crate::pitch::Pitch;
@@ -9,6 +10,13 @@ pub struct ResultCard {
     pub outcome: Outcome,
     pub grade: Option<Grade>,
     pub landing: Option<Vec3>,
+    pub fielding: Option<FieldingView>,
+}
+
+pub struct FieldingView {
+    pub defense: Defense,
+    pub velocity: Vec3,
+    pub elapsed: f32,
 }
 
 pub enum Phase {
@@ -68,8 +76,12 @@ impl Play {
                 if let Some(hit) = evaluated.filter(|g| !bounced && g.contact != Contact::Miss) {
                     self.contact = Some(hit);
                     let mut flight = Flight::new(self.pitch.crossing, hit, self.park);
-                    flight.advance(self.time - self.pitch.duration);
-                    self.phase = Phase::Flight(flight);
+                    self.phase = match flight.advance(self.time - self.pitch.duration) {
+                        Some(outcome) => {
+                            Phase::Result(batted_ball_result(outcome, self.contact, &flight))
+                        }
+                        None => Phase::Flight(flight),
+                    };
                 } else if self.time >= self.pitch.end_time() {
                     let outcome = if let Some(g) = evaluated {
                         self.contact = Some(g);
@@ -79,27 +91,46 @@ impl Play {
                     } else {
                         Outcome::Ball
                     };
-                    self.finish(outcome, None);
+                    self.finish(ResultCard {
+                        outcome,
+                        grade: self.contact,
+                        landing: None,
+                        fielding: None,
+                    });
                 }
             }
             Phase::Flight(flight) => {
                 if let Some(outcome) = flight.advance(dt) {
-                    let landing = flight.position;
-                    self.finish(outcome, Some(landing));
+                    let result = batted_ball_result(outcome, self.contact, flight);
+                    self.finish(result);
                 }
             }
             Phase::Result(_) => self.result_time += dt,
         }
     }
 
-    fn finish(&mut self, outcome: Outcome, landing: Option<Vec3>) {
+    fn finish(&mut self, result: ResultCard) {
         self.aim.held = false;
-        self.phase = Phase::Result(ResultCard {
-            outcome,
-            grade: self.contact,
-            landing,
-        });
+        self.phase = Phase::Result(result);
         self.result_time = 0.0;
+    }
+}
+
+fn batted_ball_result(outcome: Outcome, grade: Option<Grade>, flight: &Flight) -> ResultCard {
+    let fielding = outcome.fielder().map(|fielder| {
+        let mut defense = flight.defense;
+        defense.chasing = Some(fielder);
+        FieldingView {
+            defense,
+            velocity: flight.velocity,
+            elapsed: flight.elapsed,
+        }
+    });
+    ResultCard {
+        outcome,
+        grade,
+        landing: Some(flight.position),
+        fielding,
     }
 }
 

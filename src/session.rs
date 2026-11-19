@@ -43,7 +43,11 @@ impl Record {
             Outcome::HardFair => 250,
             Outcome::Fair => 100,
             Outcome::Ball => 25,
-            Outcome::Whiff | Outcome::Foul | Outcome::Strike => 0,
+            Outcome::Whiff
+            | Outcome::Foul
+            | Outcome::Strike
+            | Outcome::FlyOut(_)
+            | Outcome::GroundOut(_) => 0,
         };
         self.fair += u32::from(matches!(
             outcome,
@@ -209,6 +213,8 @@ mod tests {
             Outcome::Foul,
             Outcome::Whiff,
             Outcome::Strike,
+            Outcome::FlyOut(crate::defense::Fielder::Center),
+            Outcome::GroundOut(crate::defense::Fielder::First),
         ] {
             record.record(outcome);
         }
@@ -219,7 +225,7 @@ mod tests {
                 record.fair,
                 record.home_runs
             ),
-            (7, 875, 3, 1)
+            (9, 875, 3, 1)
         );
     }
 }
