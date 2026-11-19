@@ -74,7 +74,7 @@ impl Aim {
 
     pub fn drag(&mut self, movement: Vec2) {
         if self.held {
-            let margin = vec2(0.53, 0.49);
+            let margin = vec2(0.65, 0.49);
             self.point = (self.point + movement).clamp(ZONE_MIN - margin, ZONE_MAX + margin);
         }
     }
@@ -142,5 +142,17 @@ mod tests {
     fn ball_radius_is_checked_at_zone_edges_and_corners() {
         assert!(in_zone(vec2(ZONE_MAX.x + 0.03, CENTER.y)));
         assert!(!in_zone(ZONE_MAX + vec2(0.03, 0.03)));
+    }
+
+    #[test]
+    fn held_aim_can_sweep_past_every_edge_of_the_zone() {
+        let mut aim = Aim::default();
+        aim.press();
+        aim.drag(vec2(4.0, 4.0));
+        assert!(aim.point.cmpgt(ZONE_MAX).all());
+        aim.drag(vec2(-8.0, -8.0));
+        assert!(aim.point.cmplt(ZONE_MIN).all());
+        aim.release(0.4);
+        assert_eq!(aim.swing.unwrap().aim, aim.point);
     }
 }

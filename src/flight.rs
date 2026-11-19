@@ -1,6 +1,6 @@
 use macroquad::prelude::*;
 
-use crate::batting::{BALL_RADIUS, Contact, Grade};
+use crate::batting::{BALL_RADIUS, Contact, Grade, MEET_RADIUS};
 use crate::scene::{FENCE_HEIGHT, FENCE_RADIUS};
 
 pub const STEP: f64 = 1.0 / 120.0;
@@ -35,16 +35,25 @@ pub struct Flight {
     pub velocity: Vec3,
     pub elapsed: f32,
     pub strong: bool,
+    pub cleared_fence: bool,
     accumulator: f64,
 }
 
 impl Flight {
     pub fn new(crossing: Vec2, grade: Grade) -> Self {
         let strong = grade.contact == Contact::Barrel;
-        let speed = if strong { 49.0 } else { 34.0 };
+        let quality = (1.0
+            - 0.65 * (grade.offset / MEET_RADIUS).length()
+            - 0.35 * (grade.timing.abs() as f32 / 0.065))
+            .clamp(0.0, 1.0);
+        let speed = if strong {
+            49.0 + 11.0 * quality
+        } else {
+            31.0 + 12.0 * quality
+        };
         let horizontal =
             (grade.timing as f32 / 0.065 * 1.05 + grade.offset.x * 0.48).clamp(-1.18, 1.18);
-        let vertical = (0.38 - grade.offset.y * 3.1).clamp(-0.16, 0.83);
+        let vertical = (0.43 - grade.offset.y * 3.1).clamp(-0.16, 0.83);
         Self {
             position: crossing.extend(0.0),
             velocity: vec3(
@@ -54,6 +63,7 @@ impl Flight {
             ) * speed,
             elapsed: 0.0,
             strong,
+            cleared_fence: false,
             accumulator: 0.0,
         }
     }
@@ -83,7 +93,7 @@ impl Flight {
         } else {
             None
         };
-        let wall = if radius_sq(next) >= FENCE_RADIUS * FENCE_RADIUS {
+        let wall = if !self.cleared_fence && radius_sq(next) >= FENCE_RADIUS * FENCE_RADIUS {
             let (mut low, mut high) = (0.0, 1.0);
             for _ in 0..16 {
                 let middle = (low + high) * 0.5;
@@ -97,23 +107,39 @@ impl Flight {
         } else {
             None
         };
-        let over_wall = wall.is_some_and(|w| w <= ground.unwrap_or(1.0));
-        if let Some(fraction) = if over_wall { wall } else { ground } {
-            self.position = old.lerp(next, fraction);
-            let fair = self.position.z <= 0.0 && self.position.x.abs() <= -self.position.z + 1e-4;
-            return Some(if !fair {
-                Outcome::Foul
-            } else if over_wall && self.position.y >= FENCE_HEIGHT {
-                Outcome::Homer
-            } else if self.strong {
-                Outcome::HardFair
+        if let Some(fraction) = wall.filter(|w| *w <= ground.unwrap_or(1.0)) {
+            let crossing = old.lerp(next, fraction);
+            if fair(crossing) && crossing.y >= FENCE_HEIGHT {
+                self.cleared_fence = true;
             } else {
-                Outcome::Fair
-            });
+                self.position = crossing;
+                return Some(self.landed(crossing));
+            }
+        }
+        if let Some(fraction) = ground {
+            let point = old.lerp(next, fraction);
+            self.position = point;
+            return Some(self.landed(point));
         }
         self.position = next;
         None
     }
+
+    fn landed(&self, point: Vec3) -> Outcome {
+        if self.cleared_fence {
+            Outcome::Homer
+        } else if !fair(point) {
+            Outcome::Foul
+        } else if self.strong {
+            Outcome::HardFair
+        } else {
+            Outcome::Fair
+        }
+    }
+}
+
+fn fair(point: Vec3) -> bool {
+    point.z <= 0.0 && point.x.abs() <= -point.z + 1e-4
 }
 
 #[cfg(test)]
@@ -143,7 +169,27 @@ mod tests {
         assert_eq!(a, Outcome::Homer);
         assert_eq!(a, b);
         assert_eq!(p, q);
-        assert!(p.y >= FENCE_HEIGHT);
+        assert!((p.y - BALL_RADIUS).abs() < 1e-5);
+        assert!(p.xz().length() > FENCE_RADIUS + 35.0);
+    }
+
+    #[test]
+    fn clearing_the_fence_keeps_the_ball_in_flight_until_landing() {
+        let ideal = Grade {
+            contact: Contact::Barrel,
+            timing: 0.0,
+            offset: Vec2::ZERO,
+        };
+        let mut flight = Flight::new(CENTER, ideal);
+        for _ in 0..240 {
+            assert!(flight.advance(STEP).is_none());
+            if flight.cleared_fence {
+                assert!(flight.position.y > FENCE_HEIGHT);
+                assert!(flight.position.xz().length() >= FENCE_RADIUS);
+                return;
+            }
+        }
+        panic!("barreled hit did not clear the fence");
     }
 
     #[test]

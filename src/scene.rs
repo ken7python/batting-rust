@@ -13,11 +13,12 @@ const FENCE: Color = Color::from_rgba(23, 67, 59, 255);
 const FOUL_LINE: Color = Color::from_rgba(234, 224, 189, 255);
 const GOLD: Color = Color::from_rgba(255, 201, 95, 255);
 const INK: Color = Color::from_rgba(9, 26, 34, 255);
+pub const AIM_GREEN: Color = Color::from_rgba(126, 245, 71, 255);
 
 pub fn batter_camera() -> Camera3D {
     Camera3D {
-        position: vec3(0.07, 1.68, 3.15),
-        target: vec3(0.0, 1.35, -9.0),
+        position: vec3(0.07, 1.68, 3.55),
+        target: vec3(0.0, 0.43, -9.0),
         up: Vec3::Y,
         fovy: 47_f32.to_radians(),
         z_far: 250.0,
@@ -28,7 +29,8 @@ pub fn batter_camera() -> Camera3D {
 pub fn flight_camera(ball: Vec3, velocity: Vec3, elapsed: f32) -> Camera3D {
     let mut camera = batter_camera();
     let direction = vec3(velocity.x, 0.0, velocity.z).normalize_or_zero();
-    let blend = (elapsed / 0.3).clamp(0.0, 1.0);
+    let blend = (elapsed / 0.55).clamp(0.0, 1.0);
+    let blend = blend * blend * (3.0 - 2.0 * blend);
     camera.position = camera
         .position
         .lerp(ball - direction * 7.5 + vec3(3.2, 2.5, 0.0), blend);
@@ -68,7 +70,7 @@ fn line_on_ground(a: Vec3, b: Vec3, width: f32, color: Color) {
 }
 
 pub fn field() {
-    draw_plane(vec3(0.0, -0.04, -35.0), vec2(120.0, 110.0), None, GRASS);
+    draw_plane(vec3(0.0, -0.04, -95.0), vec2(155.0, 152.0), None, GRASS);
     for i in 0..12 {
         draw_plane(
             vec3(0.0, -0.035, -7.0 - i as f32 * 8.0),
@@ -279,15 +281,18 @@ pub fn reticle(camera: &Camera3D, aim: &Aim) {
         Color::new(0.98, 0.98, 0.83, 0.55),
     );
     let p = project(camera, on_plate(aim.point));
-    let w = project(camera, on_plate(aim.point + vec2(MEET_RADIUS.x, 0.0))).x - p.x;
-    let h = p.y - project(camera, on_plate(aim.point + vec2(0.0, MEET_RADIUS.y))).y;
+    let scale = (screen_height() / 720.0).clamp(0.75, 2.0);
     let tint = if aim.held {
-        GOLD
+        Color::from_rgba(181, 255, 102, 255)
     } else {
-        Color::new(0.93, 0.99, 0.92, 0.77)
+        AIM_GREEN
     };
-    draw_ellipse_lines(p.x, p.y, w, h, 0.0, 1.8, tint);
-    draw_circle(p.x, p.y, 2.2, tint);
+    if aim.held {
+        draw_circle(p.x, p.y, 14.0 * scale, Color::new(0.55, 1.0, 0.28, 0.20));
+    }
+    draw_circle_lines(p.x, p.y, 12.0 * scale, 6.0 * scale, INK);
+    draw_circle_lines(p.x, p.y, 12.0 * scale, 3.6 * scale, tint);
+    draw_circle(p.x, p.y, 2.1 * scale, tint);
 }
 
 pub fn aim_movement(camera: &Camera3D, pixels: Vec2) -> Vec2 {

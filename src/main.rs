@@ -210,8 +210,8 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: bool) {
             }
             if let Some(swing) = play.aim.swing {
                 let p = project(camera, on_plate(swing.aim));
-                draw_line(p.x - 7.0, p.y, p.x + 7.0, p.y, 2.0, WHITE);
-                draw_line(p.x, p.y - 7.0, p.x, p.y + 7.0, 2.0, WHITE);
+                draw_line(p.x - 7.0, p.y, p.x + 7.0, p.y, 2.0, AIM_GREEN);
+                draw_line(p.x, p.y - 7.0, p.x, p.y + 7.0, 2.0, AIM_GREEN);
             }
         }
         Phase::Flight(_) => {}
