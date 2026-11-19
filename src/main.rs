@@ -148,6 +148,10 @@ async fn main() {
             let was_resolved = matches!(session.play.phase, Phase::Result(_));
             let fence_was_cleared =
                 matches!(&session.play.phase, Phase::Flight(flight) if flight.cleared_fence);
+            let was_fielded =
+                matches!(&session.play.phase, Phase::Flight(flight) if flight.returning.is_some());
+            let was_thrown = matches!(&session.play.phase, Phase::Flight(flight)
+                if flight.returning.is_some_and(|returning| returning.airborne()));
             let summary = session.tick(dt);
             if settings.effects {
                 if was_winding_up && session.play.time >= 0.0 {
@@ -160,11 +164,26 @@ async fn main() {
                     if flight.cleared_fence && !fence_was_cleared {
                         sounds.result(Outcome::Homer);
                     }
+                    if let Some(returning) = flight.returning {
+                        if !was_fielded {
+                            sounds.glove();
+                        }
+                        if !was_thrown && returning.airborne() {
+                            sounds.pitch();
+                        }
+                    }
                 }
                 if !was_resolved
                     && let Phase::Result(card) = &session.play.phase
                     && !(fence_was_cleared && card.outcome == Outcome::Homer)
                 {
+                    if card
+                        .fielding
+                        .as_ref()
+                        .is_some_and(|view| view.returning.is_some())
+                    {
+                        sounds.glove();
+                    }
                     sounds.result(card.outcome);
                 }
             }
@@ -245,45 +264,57 @@ async fn main() {
 fn draw_idle(camera: &Camera3D, delivery: Delivery, park: Park) {
     set_camera(camera);
     field(park);
-    fielders(&Defense::new(park));
+    fielders(&Defense::new(park), 0.0, None);
     pitcher(-batting::WINDUP, delivery);
     set_default_camera();
 }
 
 fn draw_play(play: &Play, camera: &Camera3D, preview: bool) {
+    let mut throw_marker = None;
     match &play.phase {
         Phase::Flight(flight) => {
-            let follow = flight_camera(flight.position, flight.velocity, flight.elapsed);
+            let follow = flight.returning.as_ref().map_or_else(
+                || flight_camera(flight.position, flight.velocity, flight.elapsed),
+                return_camera,
+            );
             set_camera(&follow);
             field(play.park);
-            fielders(&flight.defense);
-            let trail_step = flight.elapsed.min(0.13) / 7.0;
-            for i in 0..7 {
-                let start = flight.position - flight.velocity * (i as f32 * trail_step);
-                let end = start - flight.velocity * trail_step;
-                draw_line_3d(
-                    start,
-                    end,
-                    Color::new(1.0, 0.88, 0.58, 0.9 - i as f32 * 0.11),
-                );
+            fielders(&flight.defense, flight.elapsed, flight.returning.as_ref());
+            if let Some(returning) = flight.returning {
+                if returning.airborne() {
+                    throw_marker = Some(project(&follow, flight.position));
+                }
+            } else {
+                let trail_step = flight.elapsed.min(0.13) / 7.0;
+                for i in 0..7 {
+                    let start = flight.position - flight.velocity * (i as f32 * trail_step);
+                    let end = start - flight.velocity * trail_step;
+                    draw_line_3d(
+                        start,
+                        end,
+                        Color::new(1.0, 0.88, 0.58, 0.9 - i as f32 * 0.11),
+                    );
+                }
             }
             ball(flight.position);
         }
         Phase::Result(ResultCard {
             fielding: Some(view),
-            landing: Some(position),
             ..
         }) => {
-            let follow = flight_camera(*position, view.velocity, view.elapsed);
+            let follow = view.returning.as_ref().map_or_else(
+                || flight_camera(view.ball, view.velocity, view.elapsed),
+                return_camera,
+            );
             set_camera(&follow);
             field(play.park);
-            fielders(&view.defense);
-            ball(*position);
+            fielders(&view.defense, view.elapsed, view.returning.as_ref());
+            ball(view.ball);
         }
         _ => {
             set_camera(camera);
             field(play.park);
-            fielders(&Defense::new(play.park));
+            fielders(&Defense::new(play.park), 0.0, None);
             pitcher(play.time, play.pitch.delivery);
             bat(play.time, &play.aim);
             if matches!(play.phase, Phase::Pitch) && play.time >= 0.0 {
@@ -292,6 +323,10 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: bool) {
         }
     }
     set_default_camera();
+    if let Some(point) = throw_marker {
+        draw_circle(point.x, point.y, 3.0, WHITE);
+        draw_circle_lines(point.x, point.y, 6.0, 1.4, SKYBLUE);
+    }
     match &play.phase {
         Phase::Pitch => {
             reticle(camera, &play.aim);

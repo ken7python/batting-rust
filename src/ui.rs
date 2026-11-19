@@ -384,10 +384,29 @@ impl<'a> Ui<'a> {
         } else if let Phase::Flight(flight) = &session.play.phase {
             let h = screen_height();
             self.panel(Rect::new(x, h - 89.0 * s, 195.0 * s, 68.0 * s));
-            let label = if flight.cleared_fence {
-                "ホームラン"
+            let (label, detail) = if let Some(returning) = flight.returning {
+                let label = if returning.carrying() {
+                    "ベースカバー"
+                } else if returning.airborne() {
+                    "送球"
+                } else {
+                    "捕球"
+                };
+                (
+                    label,
+                    format!(
+                        "{} → {}",
+                        returning.fielder.label(),
+                        returning.target_label()
+                    ),
+                )
             } else {
-                "飛距離"
+                let label = if flight.cleared_fence {
+                    "ホームラン"
+                } else {
+                    "飛距離"
+                };
+                (label, format!("{:.0} m", flight.position.xz().length()))
             };
             self.text(
                 label,
@@ -396,13 +415,7 @@ impl<'a> Ui<'a> {
                 17.0,
                 if flight.cleared_fence { AMBER } else { MUTED },
             );
-            self.text(
-                &format!("{:.0} m", flight.position.xz().length()),
-                x + 13.0 * s,
-                h - 30.0 * s,
-                26.0,
-                CREAM,
-            );
+            self.text(&detail, x + 13.0 * s, h - 30.0 * s, 26.0, CREAM);
         } else if matches!(session.play.phase, Phase::Pitch) {
             let hint = if session.play.time < 0.0 {
                 if session.play.aim.held {

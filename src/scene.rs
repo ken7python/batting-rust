@@ -2,7 +2,7 @@ use macroquad::camera::Camera;
 use macroquad::prelude::*;
 
 use crate::batting::*;
-use crate::defense::{Defense, FIRST_BASE, Fielder};
+use crate::defense::{Defense, FIRST_BASE, FieldReturn, Fielder, SECOND_BASE};
 use crate::park::Park;
 use crate::pitch::{Delivery, PitchForm};
 
@@ -38,6 +38,17 @@ pub fn flight_camera(ball: Vec3, velocity: Vec3, elapsed: f32) -> Camera3D {
         .target
         .lerp(ball + direction * 5.0 - Vec3::Y * 0.75, blend);
     camera
+}
+
+pub fn return_camera(returning: &FieldReturn) -> Camera3D {
+    let middle = (returning.pickup.xz() + returning.target) * 0.5;
+    let span = returning.pickup.xz().distance(returning.target);
+    let target = vec3(middle.x, 0.8, middle.y);
+    Camera3D {
+        position: target + vec3(span * 0.35 + 7.0, span * 0.40 + 5.0, span * 0.5 + 9.0),
+        target,
+        ..batter_camera()
+    }
 }
 
 pub fn project(camera: &Camera3D, position: Vec3) -> Vec2 {
@@ -115,7 +126,7 @@ pub fn field(park: Park) {
     let plate = vec3(0.0, 0.032, 0.0);
     let first = vec3(FIRST_BASE.x, 0.032, FIRST_BASE.y);
     let third = vec3(-19.4, 0.032, -19.4);
-    let second = vec3(0.0, 0.032, -38.8);
+    let second = vec3(SECOND_BASE.x, 0.032, SECOND_BASE.y);
     for (a, b) in [
         (plate, first),
         (plate, third),
@@ -184,12 +195,20 @@ pub fn field(park: Park) {
     }
 }
 
-pub fn fielders(defense: &Defense) {
+pub fn fielders(defense: &Defense, time: f32, returning: Option<&FieldReturn>) {
     let jersey = Color::from_rgba(52, 113, 201, 255);
     let skin = Color::from_rgba(216, 165, 118, 255);
     for (role, point) in Fielder::ALL.into_iter().zip(defense.positions) {
         let feet = vec3(point.x, 0.0, point.y);
         let chasing = defense.chasing == Some(role);
+        let carrier = returning.is_some_and(|play| play.fielder == role);
+        let receiving = returning.is_some_and(|play| play.receiver == role && !play.carrying());
+        let running = returning.map_or(chasing, |play| role == play.receiver);
+        let step = if running {
+            (time * 23.0).sin() * 0.18
+        } else {
+            0.0
+        };
         draw_cube(
             feet + vec3(0.0, 1.12, 0.0),
             vec3(0.48, 0.59, 0.27),
@@ -205,17 +224,31 @@ pub fn fielders(defense: &Defense) {
         );
         for side in [-1.0, 1.0] {
             draw_cube(
-                feet + vec3(side * 0.14, 0.48, 0.0),
+                feet + vec3(side * 0.14, 0.48 + (step * side).max(0.0), step * side),
                 vec3(0.19, 0.9, 0.21),
                 None,
                 WHITE,
             );
         }
+        let glove_height = if carrier || receiving {
+            1.55
+        } else if chasing {
+            1.28
+        } else {
+            0.83
+        };
+        let mut glove = feet + vec3(0.35, glove_height, 0.08);
+        if let Some(play) = returning.filter(|play| carrier && !play.carrying()) {
+            let toward = (play.target - point).normalize_or_zero();
+            let progress = play.transfer_progress();
+            let reach = -0.28 + progress * 0.58;
+            glove = feet + vec3(toward.x * reach, 0.65 + progress, toward.y * reach);
+        }
         draw_cube(
-            feet + vec3(0.35, if chasing { 1.28 } else { 0.83 }, 0.08),
+            glove,
             vec3(0.25, 0.27, 0.21),
             None,
-            if chasing { GOLD } else { BROWN },
+            if chasing || receiving { GOLD } else { BROWN },
         );
     }
 }
