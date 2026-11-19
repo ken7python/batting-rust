@@ -8,13 +8,22 @@ RustとMacroquadで作った3Dバッティングゲームです。打席で左�
 
 10球チャレンジでは本塁打やフェア打球で得点を競います。練習では11球種の指定と通過位置の予告ができます。タイトル画面で投手の利き腕とマウス感度も変更できます。
 
+## ビルド
+
+macOSでRust、Bash、Python 3、Xcode Command Line Toolsを用意し、プロジェクトのルートで実行します。初回にコンパイルターゲットを追加すると、以降は `./build.sh` でWeb版とApple Silicon版をまとめて生成できます。
+
+```sh
+rustup target add wasm32-unknown-unknown aarch64-apple-darwin
+./build.sh
+```
+
 ## Web版
 
-Rust、Bash、Python 3を用意し、プロジェクトのルートで実行します。
+Web版だけをビルドしてローカルで遊ぶ場合は次のコマンドを使います。
 
 ```sh
 rustup target add wasm32-unknown-unknown
-./scripts/build.sh web
+./build.sh web
 python3 -m http.server 8000 --directory dist/web
 ```
 
@@ -26,7 +35,7 @@ macOSでXcode Command Line ToolsとRustを用意し、以下を実行します�
 
 ```sh
 rustup target add aarch64-apple-darwin
-./scripts/build.sh macos
+./build.sh macos
 open dist/macos/Batting.app
 ```
 
