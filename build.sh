@@ -31,8 +31,17 @@ build_pages() {
     install -m 644 dist/web/batting.wasm dist/web/mq_js_bundle.js play/
     install -m 644 dist/web/licenses/*.txt play/licenses/
     touch .nojekyll
-    awk '/^<head>$/ { print; print "  <base href=\"./play/\">"; next } { print }' \
-        dist/web/index.html > index.html
+    python3 - <<'PY'
+from hashlib import sha256
+from pathlib import Path
+
+html = Path("dist/web/index.html").read_text(encoding="utf-8")
+html = html.replace("<head>", '<head>\n  <base href="./play/">', 1)
+for filename in ("batting.wasm", "mq_js_bundle.js"):
+    revision = sha256((Path("play") / filename).read_bytes()).hexdigest()[:12]
+    html = html.replace(f'"./{filename}"', f'"./{filename}?v={revision}"')
+Path("index.html").write_text(html, encoding="utf-8")
+PY
 }
 
 build_macos() {

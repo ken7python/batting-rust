@@ -15,7 +15,7 @@
 <body>
   <canvas id="glcanvas" tabindex="0" aria-label="Batting Club 3Dバッティングゲーム"></canvas>
   <p id="start-error" role="alert" hidden></p>
-  <script src="./mq_js_bundle.js"></script>
+  <script src="./mq_js_bundle.js?v=d9f0916704ee"></script>
   <script>
     (() => {
       const canvas = document.getElementById("glcanvas");
@@ -32,7 +32,7 @@
           canvas.setPointerCapture(event.pointerId);
         }
       });
-      load("./batting.wasm");
+      load("./batting.wasm?v=ec6d9132880b");
     })();
   </script>
 </body>
