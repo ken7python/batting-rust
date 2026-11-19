@@ -149,6 +149,81 @@ impl PitchKind {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Repertoire {
+    Fastballs,
+    Basic,
+    #[default]
+    Varied,
+}
+
+impl Repertoire {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Fastballs => "直球中心",
+            Self::Basic => "基本5種",
+            Self::Varied => "全11種",
+        }
+    }
+
+    pub fn next(self) -> Self {
+        match self {
+            Self::Fastballs => Self::Basic,
+            Self::Basic => Self::Varied,
+            Self::Varied => Self::Fastballs,
+        }
+    }
+
+    fn pool(self) -> &'static [PitchKind] {
+        use PitchKind::{Changeup, Fastball, Slider};
+        match self {
+            Self::Fastballs => &[Fastball, Fastball, Fastball, Slider, Changeup],
+            Self::Basic => &PitchKind::ALL[..5],
+            Self::Varied => &PitchKind::ALL,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BreakSize {
+    Small,
+    #[default]
+    Normal,
+    Large,
+}
+
+impl BreakSize {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Small => "小",
+            Self::Normal => "標準",
+            Self::Large => "大",
+        }
+    }
+
+    pub fn next(self) -> Self {
+        match self {
+            Self::Small => Self::Normal,
+            Self::Normal => Self::Large,
+            Self::Large => Self::Small,
+        }
+    }
+
+    fn multiplier(self) -> f32 {
+        match self {
+            Self::Small => 0.65,
+            Self::Normal => 1.0,
+            Self::Large => 1.5,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PitchMix {
+    pub repertoire: Repertoire,
+    pub break_size: BreakSize,
+}
+
 #[derive(Clone, Copy)]
 pub struct Pitch {
     pub kind: PitchKind,
@@ -156,6 +231,7 @@ pub struct Pitch {
     pub crossing: Vec2,
     pub duration: f64,
     pub bounce_time: Option<f64>,
+    break_size: BreakSize,
     wobble_phase: f32,
 }
 
@@ -166,6 +242,7 @@ impl Pitch {
         crossing: Vec2,
         speed: PitchSpeed,
         sample: f32,
+        break_size: BreakSize,
     ) -> Self {
         let ((min, max), _, _) = kind.profile();
         let mut pitch = Self {
@@ -174,6 +251,7 @@ impl Pitch {
             crossing,
             duration: f64::from(min + (max - min) * sample) / speed.multiplier(),
             bounce_time: None,
+            break_size,
             wobble_phase: sample * std::f32::consts::TAU,
         };
         if crossing.y < BALL_RADIUS {
@@ -196,11 +274,15 @@ impl Pitch {
         opening: bool,
         speed: PitchSpeed,
         delivery: Delivery,
+        mix: PitchMix,
     ) -> Self {
         let kind = if opening {
             PitchKind::Fastball
         } else {
-            fixed.unwrap_or_else(|| PitchKind::ALL[rand::gen_range(0, PitchKind::ALL.len())])
+            fixed.unwrap_or_else(|| {
+                let pool = mix.repertoire.pool();
+                pool[rand::gen_range(0, pool.len())]
+            })
         };
         let crossing = if opening {
             CENTER + vec2(rand::gen_range(-0.09, 0.09), rand::gen_range(-0.10, 0.10))
@@ -222,7 +304,14 @@ impl Pitch {
                 _ => vec2(rand::gen_range(-0.31, 0.31), rand::gen_range(0.16, 0.44)),
             }
         };
-        Self::new(kind, delivery, crossing, speed, rand::gen_range(0.0, 1.0))
+        Self::new(
+            kind,
+            delivery,
+            crossing,
+            speed,
+            rand::gen_range(0.0, 1.0),
+            mix.break_size,
+        )
     }
 
     pub fn end_time(self) -> f64 {
@@ -238,11 +327,16 @@ impl Pitch {
         let (_, arc, late_break) = self.kind.profile();
         let shape = |t: f32| {
             let taper = t * (1.0 - t);
-            let mut movement = arc * (4.0 * taper) + late_break * (6.0 * t * t * taper);
+            let base_arc = vec2(0.0, 0.32);
+            let mut pitch_break =
+                (arc - base_arc) * (4.0 * taper) + late_break * (6.0 * t * t * taper);
             if self.kind == PitchKind::Knuckleball {
                 let phase = self.wobble_phase + t * 19.0;
-                movement += vec2(phase.sin() * 0.22, (phase * 0.74).cos() * 0.11) * (4.0 * taper);
+                pitch_break +=
+                    vec2(phase.sin() * 0.22, (phase * 0.74).cos() * 0.11) * (4.0 * taper);
             }
+            let mut movement =
+                base_arc * (4.0 * taper) + pitch_break * self.break_size.multiplier();
             movement.x *= self.delivery.hand.sign();
             self.delivery.release().lerp(self.crossing.extend(0.0), t) + movement.extend(0.0)
         };
@@ -262,10 +356,78 @@ mod tests {
     use super::*;
 
     #[test]
+    fn repertories_limit_random_pitches_but_allow_the_chosen_practice_pitch() {
+        let mix = PitchMix {
+            repertoire: Repertoire::Fastballs,
+            break_size: BreakSize::Large,
+        };
+        assert_eq!(
+            mix.repertoire
+                .pool()
+                .iter()
+                .filter(|&&kind| kind == PitchKind::Fastball)
+                .count(),
+            3
+        );
+        assert_eq!(Repertoire::Basic.pool().len(), 5);
+        assert_eq!(Repertoire::Varied.pool().len(), 11);
+        for _ in 0..20 {
+            let random = Pitch::random(None, false, PitchSpeed::Normal, Delivery::default(), mix);
+            assert!(mix.repertoire.pool().contains(&random.kind));
+        }
+        let fixed = Pitch::random(
+            Some(PitchKind::Knuckleball),
+            false,
+            PitchSpeed::Normal,
+            Delivery::default(),
+            mix,
+        );
+        assert_eq!(fixed.kind, PitchKind::Knuckleball);
+        assert_eq!(fixed.break_size, BreakSize::Large);
+    }
+
+    #[test]
+    fn break_size_changes_movement_while_keeping_the_arrival_time_and_target() {
+        let delivery = Delivery::default();
+        let target = vec2(-0.12, 0.73);
+        let progress = 0.75;
+        let baseline = delivery.release().lerp(target.extend(0.0), progress)
+            + vec3(0.0, 0.32 * 4.0 * progress * (1.0 - progress), 0.0);
+        for kind in PitchKind::ALL {
+            let pitches = [BreakSize::Small, BreakSize::Normal, BreakSize::Large].map(|strength| {
+                Pitch::new(kind, delivery, target, PitchSpeed::High, 0.5, strength)
+            });
+            let deviations = pitches.map(|pitch| {
+                assert_eq!(pitch.duration, pitches[1].duration);
+                assert!(
+                    pitch
+                        .position(pitch.duration)
+                        .abs_diff_eq(target.extend(0.0), 1e-5)
+                );
+                pitch
+                    .position(pitch.duration * f64::from(progress))
+                    .distance(baseline)
+            });
+            assert!(
+                deviations[0] < deviations[1] && deviations[1] < deviations[2],
+                "{kind:?}"
+            );
+        }
+    }
+
+    #[test]
     fn faster_presets_shorten_every_pitch_without_moving_its_break() {
         for kind in PitchKind::ALL {
-            let pitches = PitchSpeed::ALL
-                .map(|speed| Pitch::new(kind, Delivery::default(), CENTER, speed, 0.5));
+            let pitches = PitchSpeed::ALL.map(|speed| {
+                Pitch::new(
+                    kind,
+                    Delivery::default(),
+                    CENTER,
+                    speed,
+                    0.5,
+                    BreakSize::Normal,
+                )
+            });
             for pair in pitches.windows(2) {
                 assert!(pair[0].duration > pair[1].duration);
                 assert!(
@@ -284,6 +446,7 @@ mod tests {
             CENTER,
             PitchSpeed::Real,
             0.5,
+            BreakSize::Normal,
         );
         assert!((real.average_kmh() - 149.0).abs() < 1.0);
     }
@@ -292,7 +455,14 @@ mod tests {
     fn each_pitch_releases_from_the_hand_and_crosses_the_selected_target() {
         let target = vec2(-0.12, 0.73);
         for kind in PitchKind::ALL {
-            let pitch = Pitch::new(kind, Delivery::default(), target, PitchSpeed::Normal, 0.5);
+            let pitch = Pitch::new(
+                kind,
+                Delivery::default(),
+                target,
+                PitchSpeed::Normal,
+                0.5,
+                BreakSize::Normal,
+            );
             assert_eq!(pitch.position(0.0), Delivery::default().release());
             assert!(
                 pitch
@@ -306,6 +476,7 @@ mod tests {
             target,
             PitchSpeed::Normal,
             0.5,
+            BreakSize::Normal,
         );
         let curve = Pitch::new(
             PitchKind::Curve,
@@ -313,6 +484,7 @@ mod tests {
             target,
             PitchSpeed::Normal,
             0.5,
+            BreakSize::Normal,
         );
         assert!(
             curve.position(curve.duration * 0.6).y
@@ -329,6 +501,7 @@ mod tests {
             vec2(0.0, -0.3),
             PitchSpeed::Normal,
             0.5,
+            BreakSize::Normal,
         );
         assert!(pitch.end_time() < pitch.duration);
         let bounce = pitch.position(pitch.end_time());
@@ -346,7 +519,14 @@ mod tests {
                 hand,
                 form: PitchForm::Overhand,
             };
-            let pitch = Pitch::new(PitchKind::Slider, sidearm, CENTER, PitchSpeed::Normal, 0.5);
+            let pitch = Pitch::new(
+                PitchKind::Slider,
+                sidearm,
+                CENTER,
+                PitchSpeed::Normal,
+                0.5,
+                BreakSize::Normal,
+            );
             let release = pitch.position(0.0);
             assert!(release.y < overhand.release().y);
             assert!(release.x * hand.sign() > overhand.release().x * hand.sign());
@@ -361,7 +541,14 @@ mod tests {
     #[test]
     fn switching_pitcher_hands_mirrors_the_break() {
         for kind in PitchKind::ALL {
-            let right = Pitch::new(kind, Delivery::default(), CENTER, PitchSpeed::Normal, 0.4);
+            let right = Pitch::new(
+                kind,
+                Delivery::default(),
+                CENTER,
+                PitchSpeed::Normal,
+                0.4,
+                BreakSize::Normal,
+            );
             let left = Pitch::new(
                 kind,
                 Delivery {
@@ -371,6 +558,7 @@ mod tests {
                 CENTER,
                 PitchSpeed::Normal,
                 0.4,
+                BreakSize::Normal,
             );
             let a = right.position(right.duration * 0.73);
             let b = left.position(left.duration * 0.73);

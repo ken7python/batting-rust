@@ -2,7 +2,7 @@ use macroquad::prelude::*;
 
 use crate::batting::{Grade, MEET_RADIUS};
 use crate::park::Park;
-use crate::pitch::{Delivery, PitchForm, PitchKind, PitchSpeed, ThrowingHand};
+use crate::pitch::{Delivery, PitchForm, PitchKind, PitchMix, PitchSpeed, ThrowingHand};
 use crate::play::{Phase, ResultCard};
 use crate::session::{CHALLENGE_LENGTH, Mode, Record, Session};
 
@@ -24,6 +24,8 @@ pub enum Action {
     Hand,
     Form,
     Park,
+    Repertoire,
+    BreakSize,
     Pause,
     Resume,
     Menu,
@@ -36,6 +38,7 @@ pub struct Settings {
     sensitivity: usize,
     pub delivery: Delivery,
     pub park: Park,
+    pub pitch_mix: PitchMix,
 }
 
 impl Default for Settings {
@@ -47,6 +50,7 @@ impl Default for Settings {
             sensitivity: 1,
             delivery: Delivery::default(),
             park: Park::default(),
+            pitch_mix: PitchMix::default(),
         }
     }
 }
@@ -92,6 +96,8 @@ impl Settings {
                     Park::Sunset => Park::Central,
                 };
             }
+            Action::Repertoire => self.pitch_mix.repertoire = self.pitch_mix.repertoire.next(),
+            Action::BreakSize => self.pitch_mix.break_size = self.pitch_mix.break_size.next(),
             _ => {}
         }
     }
@@ -109,7 +115,7 @@ impl<'a> Ui<'a> {
         Self {
             font,
             scale: (screen_width() / 980.0)
-                .min(screen_height() / 650.0)
+                .min(screen_height() / 680.0)
                 .clamp(0.40, 1.7),
             mouse: Vec2::from(mouse_position()),
             pressed: is_mouse_button_pressed(MouseButton::Left),
@@ -160,10 +166,10 @@ impl<'a> Ui<'a> {
     pub fn menu(&self, settings: &Settings) -> Option<Action> {
         let s = self.scale;
         let x = 28.0 * s;
-        let y = (screen_height() - 608.0 * s) * 0.5;
+        let y = (screen_height() - 657.0 * s) * 0.5;
         let w = 436.0 * s;
         let rect = |x0, y0, width, height| Rect::new(x + x0 * s, y + y0 * s, width * s, height * s);
-        self.panel(Rect::new(x, y, w, 608.0 * s));
+        self.panel(Rect::new(x, y, w, 657.0 * s));
         draw_rectangle(x, y, w, 4.0 * s, AMBER);
         self.text("3D BASEBALL", x + 24.0 * s, y + 43.0 * s, 16.0, AMBER);
         self.text("BATTING CLUB", x + 22.0 * s, y + 97.0 * s, 47.0, CREAM);
@@ -222,10 +228,20 @@ impl<'a> Ui<'a> {
             &format!("{} {:.0}m", settings.park.label(), settings.park.fence().0),
             false,
         );
+        let repertoire = self.button(
+            rect(24.0, 554.0, 188.0, 44.0),
+            &format!("配球  {}", settings.pitch_mix.repertoire.label()),
+            false,
+        );
+        let break_size = self.button(
+            rect(224.0, 554.0, 188.0, 44.0),
+            &format!("変化量  {}", settings.pitch_mix.break_size.label()),
+            false,
+        );
         self.text(
             "操作  左ボタンを押したままマウスを動かす",
             x + 24.0 * s,
-            y + 584.0 * s,
+            y + 635.0 * s,
             16.0,
             MUTED,
         );
@@ -238,6 +254,8 @@ impl<'a> Ui<'a> {
             (hand, Action::Hand),
             (form, Action::Form),
             (park, Action::Park),
+            (repertoire, Action::Repertoire),
+            (break_size, Action::BreakSize),
         ]
         .into_iter()
         .find_map(|(hit, action)| hit.then_some(action))
