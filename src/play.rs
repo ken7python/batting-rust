@@ -1,7 +1,7 @@
 use macroquad::prelude::*;
 
 use crate::batting::{Aim, Contact, Grade, WINDUP, grade, in_zone};
-use crate::defense::Defense;
+use crate::defense::{Defense, FieldReturn};
 use crate::flight::{Flight, Outcome};
 use crate::park::Park;
 use crate::pitch::Pitch;
@@ -15,6 +15,8 @@ pub struct ResultCard {
 
 pub struct FieldingView {
     pub defense: Defense,
+    pub returning: Option<FieldReturn>,
+    pub ball: Vec3,
     pub velocity: Vec3,
     pub elapsed: f32,
 }
@@ -117,11 +119,16 @@ impl Play {
 }
 
 fn batted_ball_result(outcome: Outcome, grade: Option<Grade>, flight: &Flight) -> ResultCard {
-    let fielding = outcome.fielder().map(|fielder| {
+    let fielder = outcome
+        .fielder()
+        .or(flight.returning.map(|returning| returning.fielder));
+    let fielding = fielder.map(|fielder| {
         let mut defense = flight.defense;
         defense.chasing = Some(fielder);
         FieldingView {
             defense,
+            returning: flight.returning,
+            ball: flight.position,
             velocity: flight.velocity,
             elapsed: flight.elapsed,
         }
@@ -129,7 +136,7 @@ fn batted_ball_result(outcome: Outcome, grade: Option<Grade>, flight: &Flight) -
     ResultCard {
         outcome,
         grade,
-        landing: Some(flight.position),
+        landing: Some(flight.batted_point()),
         fielding,
     }
 }

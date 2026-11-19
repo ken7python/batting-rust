@@ -1,7 +1,7 @@
 use macroquad::prelude::*;
 
 use crate::batting::{BALL_RADIUS, Contact, Grade, MEET_RADIUS};
-use crate::defense::{Defense, FIRST_BASE, Fielder};
+use crate::defense::{Defense, FieldReturn, Fielder, RUNNER_TO_FIRST};
 use crate::park::Park;
 
 pub const STEP: f64 = 1.0 / 120.0;
@@ -49,8 +49,10 @@ pub struct Flight {
     pub strong: bool,
     pub cleared_fence: bool,
     pub defense: Defense,
+    pub returning: Option<FieldReturn>,
     park: Park,
-    rolling_for: Option<f32>,
+    rolling: bool,
+    hit_wall: bool,
     accumulator: f64,
 }
 
@@ -81,8 +83,10 @@ impl Flight {
             strong,
             cleared_fence: false,
             defense: Defense::new(park),
+            returning: None,
             park,
-            rolling_for: None,
+            rolling: false,
+            hit_wall: false,
             accumulator: 0.0,
         }
     }
@@ -101,8 +105,21 @@ impl Flight {
     fn step(&mut self) -> Option<Outcome> {
         let dt = STEP as f32;
         self.elapsed += dt;
-        if let Some(rolling_for) = self.rolling_for {
-            return self.roll(dt, rolling_for);
+        if let Some(returning) = &mut self.returning {
+            let arrived = returning.advance(&mut self.defense, dt);
+            self.position = returning.ball_position(&self.defense);
+            let fielder = returning.fielder;
+            return arrived.then(|| {
+                if fielder.infield() && self.elapsed < RUNNER_TO_FIRST {
+                    Outcome::GroundOut(fielder)
+                } else {
+                    self.hit()
+                }
+            });
+        }
+        if self.rolling {
+            self.roll(dt);
+            return None;
         }
         let old = self.position;
         self.velocity +=
@@ -132,15 +149,19 @@ impl Flight {
         };
         if let Some(fraction) = wall.filter(|w| *w <= ground.unwrap_or(1.0)) {
             let crossing = old.lerp(next, fraction);
-            if fair(crossing) && crossing.y >= fence_height {
+            if !fair(crossing) {
+                self.position = crossing;
+                return Some(Outcome::Foul);
+            }
+            if crossing.y >= fence_height {
                 self.cleared_fence = true;
             } else {
-                self.position = crossing;
-                return Some(if fair(crossing) {
-                    self.hit()
-                } else {
-                    Outcome::Foul
-                });
+                let normal = vec3(crossing.x, 0.0, crossing.z).normalize();
+                self.position = crossing - normal * 0.03;
+                self.velocity = (self.velocity - 2.0 * self.velocity.dot(normal) * normal) * 0.22;
+                self.velocity.y = self.velocity.y.min(0.0);
+                self.hit_wall = true;
+                return None;
             }
         }
         if !self.cleared_fence {
@@ -148,7 +169,8 @@ impl Flight {
             if fair(reachable) {
                 self.defense
                     .chase(reachable, self.velocity, self.elapsed, dt, false);
-                if self.velocity.y < 0.0
+                if !self.hit_wall
+                    && self.velocity.y < 0.0
                     && (0.45..=2.35).contains(&reachable.y)
                     && let Some(fielder) = self.defense.within_reach(reachable.xz(), 1.05)
                 {
@@ -167,35 +189,34 @@ impl Flight {
                 return Some(Outcome::Foul);
             }
             self.velocity = vec3(self.velocity.x * 0.73, 0.0, self.velocity.z * 0.73);
-            self.rolling_for = Some(0.0);
+            self.rolling = true;
             return None;
         }
         self.position = next;
         None
     }
 
-    fn roll(&mut self, dt: f32, rolling_for: f32) -> Option<Outcome> {
+    fn roll(&mut self, dt: f32) {
         self.position += self.velocity * dt;
         self.velocity *= 1.0 - 1.25 * dt;
-        self.rolling_for = Some(rolling_for + dt);
         let fence_radius = self.park.fence().0;
         if self.position.xz().length_squared() >= fence_radius * fence_radius {
             let stop = self.position.xz().normalize() * fence_radius;
             self.position = vec3(stop.x, BALL_RADIUS, stop.y);
-            return Some(self.hit());
+            self.velocity = Vec3::ZERO;
         }
         self.defense
             .chase(self.position, self.velocity, self.elapsed, dt, true);
         if let Some(fielder) = self.defense.within_reach(self.position.xz(), 1.05) {
-            let time_at_first =
-                self.elapsed + 0.42 + self.position.xz().distance(FIRST_BASE) / 26.0;
-            return Some(if fielder.infield() && time_at_first < 4.25 {
-                Outcome::GroundOut(fielder)
-            } else {
-                self.hit()
-            });
+            self.defense.chasing = Some(fielder);
+            self.returning = Some(FieldReturn::new(fielder, self.position, &self.defense));
+            self.velocity = Vec3::ZERO;
         }
-        (rolling_for + dt >= 2.2 || self.velocity.length_squared() < 1.5).then(|| self.hit())
+    }
+
+    pub fn batted_point(&self) -> Vec3 {
+        self.returning
+            .map_or(self.position, |returning| returning.pickup)
     }
 
     fn hit(&self) -> Outcome {
@@ -220,7 +241,7 @@ mod tests {
         let mut flight = Flight::new(CENTER, grade, park);
         for _ in 0..2000 {
             if let Some(outcome) = flight.advance(frame_time) {
-                return (outcome, flight.position);
+                return (outcome, flight.batted_point());
             }
         }
         panic!("flight did not finish");
@@ -275,7 +296,7 @@ mod tests {
             let mut flight = Flight::new(CENTER, grade, park);
             flight.position = vec3(0.0, 2.8, -76.5);
             flight.velocity = vec3(0.0, 0.0, -31.0);
-            let result = (0..120).find_map(|_| flight.advance(STEP));
+            let result = (0..1200).find_map(|_| flight.advance(STEP));
             assert_eq!(result, Some(expected));
         }
     }
@@ -339,8 +360,17 @@ mod tests {
             flight.position = position;
             flight.velocity = velocity;
             flight.elapsed = 1.0;
-            let outcome = (0..480).find_map(|_| flight.advance(STEP));
+            let outcome = (0..1000).find_map(|_| flight.advance(STEP));
             assert_eq!(outcome, Some(expected));
+            if expected == Outcome::Fair {
+                let returning = flight
+                    .returning
+                    .expect("the outfielder should return the ball");
+                assert!(!returning.fielder.infield());
+                assert_eq!(returning.target, crate::defense::SECOND_BASE);
+                assert!(flight.position.xz().abs_diff_eq(returning.target, 0.01));
+                assert!(flight.batted_point().xz().distance(returning.target) > 5.0);
+            }
         }
     }
 
@@ -361,11 +391,63 @@ mod tests {
             );
             flight.position = vec3(10.4, BALL_RADIUS, -24.0);
             flight.velocity = vec3(0.0, 0.0, -13.0);
-            flight.rolling_for = Some(0.0);
+            flight.rolling = true;
             flight.elapsed = elapsed;
-            let outcome = (0..150).find_map(|_| flight.advance(STEP));
+            let mut threw = false;
+            let outcome = (0..480).find_map(|_| {
+                let outcome = flight.advance(STEP);
+                if flight
+                    .returning
+                    .is_some_and(|returning| returning.airborne())
+                {
+                    assert!(outcome.is_none());
+                    threw = true;
+                }
+                outcome
+            });
             assert_eq!(outcome, Some(expected));
+            assert!(threw);
+            let first = crate::defense::FIRST_BASE;
+            assert!(flight.position.xz().abs_diff_eq(first, 0.01));
+            assert!(
+                flight
+                    .defense
+                    .position(Fielder::First)
+                    .abs_diff_eq(first, 0.01)
+            );
         }
+    }
+
+    #[test]
+    fn first_baseman_can_carry_the_ball_to_the_bag() {
+        let mut flight = Flight::new(
+            CENTER,
+            Grade {
+                contact: Contact::Touch,
+                timing: 0.0,
+                offset: Vec2::ZERO,
+            },
+            Park::Central,
+        );
+        flight.position = vec3(14.7, BALL_RADIUS, -20.7);
+        flight.velocity = vec3(0.0, 0.0, -4.0);
+        flight.rolling = true;
+        flight.elapsed = 1.1;
+        let outcome = (0..480).find_map(|_| {
+            let outcome = flight.advance(STEP);
+            if let Some(returning) = flight.returning {
+                assert!(returning.carrying());
+                assert!(!returning.airborne());
+            }
+            outcome
+        });
+        assert_eq!(outcome, Some(Outcome::GroundOut(Fielder::First)));
+        assert!(
+            flight
+                .position
+                .xz()
+                .abs_diff_eq(crate::defense::FIRST_BASE, 0.01)
+        );
     }
 
     #[test]

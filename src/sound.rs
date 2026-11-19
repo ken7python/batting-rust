@@ -50,6 +50,10 @@ impl Sounds {
         Self::play(&self.pitch, 0.38);
     }
 
+    pub fn glove(&self) {
+        Self::play(&self.glove, 0.42);
+    }
+
     pub fn contact(&self, barrel: bool) {
         Self::play(if barrel { &self.barrel } else { &self.contact }, 0.58);
     }
