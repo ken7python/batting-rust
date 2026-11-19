@@ -9,10 +9,7 @@ const RESULT_SECONDS: f64 = 1.45;
 #[derive(Clone, Copy)]
 pub enum Mode {
     Challenge,
-    Practice {
-        kind: Option<PitchKind>,
-        preview: bool,
-    },
+    Practice { kind: Option<PitchKind> },
 }
 
 impl Mode {
@@ -27,10 +24,6 @@ impl Mode {
             Self::Challenge => Pitch::random(None, completed < 2, speed, delivery, mix),
             Self::Practice { kind, .. } => Pitch::random(kind, false, speed, delivery, mix),
         }
-    }
-
-    pub fn preview(self) -> bool {
-        matches!(self, Self::Practice { preview: true, .. })
     }
 }
 
@@ -130,7 +123,6 @@ mod tests {
             Mode::Challenge,
             Mode::Practice {
                 kind: Some(PitchKind::Fastball),
-                preview: false,
             },
         ] {
             let mut run = Session::new(
@@ -185,7 +177,6 @@ mod tests {
         let mut run = Session::new(
             Mode::Practice {
                 kind: Some(PitchKind::Curve),
-                preview: true,
             },
             delivery,
             PitchSpeed::Slow,

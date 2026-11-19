@@ -151,7 +151,7 @@ async fn main() {
                 ui.menu(&settings)
             }
             Screen::Game(run) => {
-                draw_play(&run.play, &camera, run.mode.preview());
+                draw_play(&run.play, &camera, settings.preview);
                 ui.game(run)
             }
             Screen::Summary(record) => {
@@ -244,11 +244,18 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: bool) {
     set_default_camera();
     match &play.phase {
         Phase::Pitch => {
-            if preview && play.pitch.bounce_time.is_none() {
-                let p = project(camera, on_plate(play.pitch.crossing));
-                draw_circle_lines(p.x, p.y, 7.0, 1.5, SKYBLUE);
-            }
             reticle(camera, &play.aim);
+            if preview {
+                let p = project(camera, play.pitch.preview_point());
+                let radius = (screen_height() / 720.0).clamp(0.75, 2.0) * 5.0;
+                let color = if play.pitch.bounce_time.is_some() {
+                    GOLD
+                } else {
+                    SKYBLUE
+                };
+                draw_circle(p.x, p.y, radius + 1.5, BLACK);
+                draw_circle(p.x, p.y, radius, color);
+            }
         }
         Phase::Result(_) => {
             if play.pitch.bounce_time.is_none() {
