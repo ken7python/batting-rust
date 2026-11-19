@@ -4,7 +4,9 @@ use crate::park::Park;
 
 pub const FIRST_BASE: Vec2 = vec2(19.4, -19.4);
 pub const SECOND_BASE: Vec2 = vec2(0.0, -38.8);
-pub const RUNNER_TO_FIRST: f32 = 4.25;
+pub const RUNNER_TO_FIRST: f32 = 3.95;
+
+pub const FIELDING_REACH: f32 = 0.94;
 
 const INFIELDER_SPEED: f32 = 5.3;
 const THROW_SPEED: f32 = 26.0;
@@ -75,7 +77,7 @@ impl Defense {
     }
 
     pub fn chase(&mut self, position: Vec3, velocity: Vec3, elapsed: f32, dt: f32, rolling: bool) {
-        if elapsed < 0.24 {
+        if elapsed < 0.34 {
             return;
         }
         let lead = if rolling {

@@ -1,6 +1,6 @@
 use macroquad::prelude::*;
 
-use crate::batting::{Grade, MEET_RADIUS};
+use crate::batting::{BARREL_RADIUS, BARREL_TIMING, Grade};
 use crate::park::Park;
 use crate::pitch::{Delivery, PitchForm, PitchKind, PitchMix, PitchSpeed, ThrowingHand};
 use crate::play::{Phase, ResultCard};
@@ -556,15 +556,15 @@ impl<'a> Ui<'a> {
 }
 
 fn feedback_label(grade: Grade) -> String {
-    let timing = if grade.timing < -0.03 {
+    let timing = if grade.timing < -BARREL_TIMING {
         "早い"
-    } else if grade.timing > 0.03 {
+    } else if grade.timing > BARREL_TIMING {
         "遅い"
     } else {
         "適正"
     };
-    let offset = grade.offset / MEET_RADIUS;
-    let position = if offset.length() <= 0.5 {
+    let offset = grade.offset / BARREL_RADIUS;
+    let position = if offset.length() <= 1.0 {
         "芯付近"
     } else if offset.y.abs() >= offset.x.abs() {
         if offset.y > 0.0 {

@@ -3,7 +3,10 @@ use macroquad::prelude::*;
 pub const ZONE_MIN: Vec2 = vec2(-0.215, 0.52);
 pub const ZONE_MAX: Vec2 = vec2(0.215, 1.16);
 pub const CENTER: Vec2 = vec2(0.0, 0.84);
-pub const MEET_RADIUS: Vec2 = vec2(0.18, 0.14);
+pub const MEET_RADIUS: Vec2 = vec2(0.225, 0.175);
+pub const BARREL_RADIUS: Vec2 = vec2(0.040, 0.032);
+pub const HIT_TIMING: f64 = 0.080;
+pub const BARREL_TIMING: f64 = 0.012;
 pub const SWING_LEAD: f64 = 0.075;
 pub const WINDUP: f64 = 0.68;
 pub const CATCH_DELAY: f64 = 0.13;
@@ -33,9 +36,9 @@ pub fn grade(swing: Swing, arrival: f64, crossing: Vec2) -> Grade {
     let timing = swing.time + SWING_LEAD - arrival;
     let offset = swing.aim - crossing;
     let distance = (offset / MEET_RADIUS).length();
-    let contact = if timing.abs() > 0.065 + 1e-9 || distance > 1.0 {
+    let contact = if timing.abs() > HIT_TIMING + 1e-9 || distance > 1.0 {
         Contact::Miss
-    } else if timing.abs() <= 0.030 + 1e-9 && distance <= 0.5 {
+    } else if timing.abs() <= BARREL_TIMING + 1e-9 && (offset / BARREL_RADIUS).length() <= 1.0 {
         Contact::Barrel
     } else {
         Contact::Touch
@@ -132,15 +135,19 @@ mod tests {
             Contact::Barrel
         );
         assert_eq!(
-            grade(swing(0.34, CENTER), 0.48, CENTER).contact,
+            grade(swing(0.33, CENTER), 0.48, CENTER).contact,
             Contact::Touch
         );
         assert_eq!(
-            grade(swing(0.48, CENTER), 0.48, CENTER).contact,
+            grade(swing(0.405, CENTER + vec2(0.0, 0.15)), 0.48, CENTER).contact,
+            Contact::Touch
+        );
+        assert_eq!(
+            grade(swing(0.49, CENTER), 0.48, CENTER).contact,
             Contact::Miss
         );
         assert_eq!(
-            grade(swing(0.405, CENTER + vec2(0.0, 0.15)), 0.48, CENTER).contact,
+            grade(swing(0.405, CENTER + vec2(0.0, 0.18)), 0.48, CENTER).contact,
             Contact::Miss
         );
     }
