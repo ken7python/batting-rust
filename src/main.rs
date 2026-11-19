@@ -331,13 +331,10 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: bool) {
         Phase::Pitch => {
             reticle(camera, &play.aim);
             if preview {
-                let p = project(camera, play.pitch.preview_point());
+                let predicted = play.pitch.preview_point(play.time);
+                let p = project(camera, predicted);
                 let radius = (screen_height() / 720.0).clamp(0.75, 2.0) * 5.0;
-                let color = if play.pitch.bounce_time.is_some() {
-                    GOLD
-                } else {
-                    SKYBLUE
-                };
+                let color = if predicted.z < 0.0 { GOLD } else { SKYBLUE };
                 draw_circle(p.x, p.y, radius + 1.5, BLACK);
                 draw_circle(p.x, p.y, radius, color);
             }
