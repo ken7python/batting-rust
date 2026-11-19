@@ -1,4 +1,5 @@
 use crate::flight::Outcome;
+use crate::park::Park;
 use crate::pitch::{Delivery, Pitch, PitchKind, PitchSpeed};
 use crate::play::{Phase, Play};
 
@@ -62,12 +63,12 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn new(mode: Mode, delivery: Delivery, speed: PitchSpeed) -> Self {
+    pub fn new(mode: Mode, delivery: Delivery, speed: PitchSpeed, park: Park) -> Self {
         Self {
             mode,
             speed,
             record: Record::default(),
-            play: Play::new(mode.next_pitch(0, delivery, speed)),
+            play: Play::new(mode.next_pitch(0, delivery, speed), park),
             paused: false,
         }
     }
@@ -117,7 +118,7 @@ mod tests {
                 preview: false,
             },
         ] {
-            let mut run = Session::new(mode, Delivery::default(), PitchSpeed::Real);
+            let mut run = Session::new(mode, Delivery::default(), PitchSpeed::Real, Park::Central);
             for completed in 0..2 {
                 assert_eq!(run.record.completed, completed);
                 assert!((140.0..160.0).contains(&run.play.pitch.average_kmh()));
@@ -130,7 +131,12 @@ mod tests {
 
     #[test]
     fn ten_pitch_round_records_each_pitch_once_including_takes() {
-        let mut run = Session::new(Mode::Challenge, Delivery::default(), PitchSpeed::Normal);
+        let mut run = Session::new(
+            Mode::Challenge,
+            Delivery::default(),
+            PitchSpeed::Normal,
+            Park::Central,
+        );
         assert_eq!(run.play.pitch.kind, PitchKind::Fastball);
         let mut result = None;
         for _ in 0..4000 {
@@ -161,6 +167,7 @@ mod tests {
             },
             delivery,
             PitchSpeed::Slow,
+            Park::Sunset,
         );
         run.play.aim.press();
         run.pause();

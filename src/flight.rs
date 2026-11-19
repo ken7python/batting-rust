@@ -1,7 +1,7 @@
 use macroquad::prelude::*;
 
 use crate::batting::{BALL_RADIUS, Contact, Grade, MEET_RADIUS};
-use crate::scene::{FENCE_HEIGHT, FENCE_RADIUS};
+use crate::park::Park;
 
 pub const STEP: f64 = 1.0 / 120.0;
 
@@ -36,11 +36,12 @@ pub struct Flight {
     pub elapsed: f32,
     pub strong: bool,
     pub cleared_fence: bool,
+    park: Park,
     accumulator: f64,
 }
 
 impl Flight {
-    pub fn new(crossing: Vec2, grade: Grade) -> Self {
+    pub fn new(crossing: Vec2, grade: Grade, park: Park) -> Self {
         let strong = grade.contact == Contact::Barrel;
         let quality = (1.0
             - 0.65 * (grade.offset / MEET_RADIUS).length()
@@ -64,6 +65,7 @@ impl Flight {
             elapsed: 0.0,
             strong,
             cleared_fence: false,
+            park,
             accumulator: 0.0,
         }
     }
@@ -87,17 +89,18 @@ impl Flight {
         let next = old + self.velocity * dt;
         self.elapsed += dt;
 
+        let (fence_radius, fence_height) = self.park.fence();
         let radius_sq = |p: Vec3| p.x * p.x + p.z * p.z;
         let ground = if next.y <= BALL_RADIUS {
             Some(((old.y - BALL_RADIUS) / (old.y - next.y)).clamp(0.0, 1.0))
         } else {
             None
         };
-        let wall = if !self.cleared_fence && radius_sq(next) >= FENCE_RADIUS * FENCE_RADIUS {
+        let wall = if !self.cleared_fence && radius_sq(next) >= fence_radius * fence_radius {
             let (mut low, mut high) = (0.0, 1.0);
             for _ in 0..16 {
                 let middle = (low + high) * 0.5;
-                if radius_sq(old.lerp(next, middle)) >= FENCE_RADIUS * FENCE_RADIUS {
+                if radius_sq(old.lerp(next, middle)) >= fence_radius * fence_radius {
                     high = middle;
                 } else {
                     low = middle;
@@ -109,7 +112,7 @@ impl Flight {
         };
         if let Some(fraction) = wall.filter(|w| *w <= ground.unwrap_or(1.0)) {
             let crossing = old.lerp(next, fraction);
-            if fair(crossing) && crossing.y >= FENCE_HEIGHT {
+            if fair(crossing) && crossing.y >= fence_height {
                 self.cleared_fence = true;
             } else {
                 self.position = crossing;
@@ -148,7 +151,7 @@ mod tests {
     use crate::batting::CENTER;
 
     fn simulate(frame_time: f64, grade: Grade) -> (Outcome, Vec3) {
-        let mut flight = Flight::new(CENTER, grade);
+        let mut flight = Flight::new(CENTER, grade, Park::Central);
         for _ in 0..2000 {
             if let Some(outcome) = flight.advance(frame_time) {
                 return (outcome, flight.position);
@@ -170,7 +173,7 @@ mod tests {
         assert_eq!(a, b);
         assert_eq!(p, q);
         assert!((p.y - BALL_RADIUS).abs() < 1e-5);
-        assert!(p.xz().length() > FENCE_RADIUS + 35.0);
+        assert!(p.xz().length() > Park::Central.fence().0 + 35.0);
     }
 
     #[test]
@@ -180,16 +183,35 @@ mod tests {
             timing: 0.0,
             offset: Vec2::ZERO,
         };
-        let mut flight = Flight::new(CENTER, ideal);
+        let mut flight = Flight::new(CENTER, ideal, Park::Central);
         for _ in 0..240 {
             assert!(flight.advance(STEP).is_none());
             if flight.cleared_fence {
-                assert!(flight.position.y > FENCE_HEIGHT);
-                assert!(flight.position.xz().length() >= FENCE_RADIUS);
+                assert!(flight.position.y > Park::Central.fence().1);
+                assert!(flight.position.xz().length() >= Park::Central.fence().0);
                 return;
             }
         }
         panic!("barreled hit did not clear the fence");
+    }
+
+    #[test]
+    fn the_same_fly_ball_can_clear_sunset_but_hit_the_central_fence() {
+        let grade = Grade {
+            contact: Contact::Touch,
+            timing: 0.0,
+            offset: Vec2::ZERO,
+        };
+        for (park, expected) in [
+            (Park::Sunset, Outcome::Homer),
+            (Park::Central, Outcome::Fair),
+        ] {
+            let mut flight = Flight::new(CENTER, grade, park);
+            flight.position = vec3(0.0, 2.8, -76.5);
+            flight.velocity = vec3(0.0, 0.0, -31.0);
+            let result = (0..120).find_map(|_| flight.advance(STEP));
+            assert_eq!(result, Some(expected));
+        }
     }
 
     #[test]

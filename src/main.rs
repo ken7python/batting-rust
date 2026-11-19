@@ -1,5 +1,6 @@
 mod batting;
 mod flight;
+mod park;
 mod pitch;
 mod play;
 mod scene;
@@ -10,14 +11,13 @@ mod ui;
 use macroquad::input::utils::{register_input_subscriber, repeat_all_miniquad_input};
 use macroquad::miniquad::EventHandler;
 use macroquad::prelude::*;
+use park::Park;
 use pitch::Delivery;
 use play::{Phase, Play};
 use scene::*;
 use session::{Mode, Record, Session};
 use sound::Sounds;
 use ui::{Action, Settings, Ui};
-
-const SKY: Color = Color::from_rgba(147, 198, 218, 255);
 
 enum Screen {
     Menu,
@@ -145,10 +145,9 @@ async fn main() {
         previous_size = size;
         show_mouse(!matches!(&screen, Screen::Game(run) if run.play.aim.held));
 
-        clear_background(SKY);
         let action = match &screen {
             Screen::Menu => {
-                draw_idle(&camera, settings.delivery);
+                draw_idle(&camera, settings.delivery, settings.park);
                 ui.menu(&settings)
             }
             Screen::Game(run) => {
@@ -156,7 +155,7 @@ async fn main() {
                 ui.game(run)
             }
             Screen::Summary(record) => {
-                draw_idle(&camera, settings.delivery);
+                draw_idle(&camera, settings.delivery, settings.park);
                 ui.summary(*record)
             }
         };
@@ -168,6 +167,7 @@ async fn main() {
                         Mode::Challenge,
                         settings.delivery,
                         settings.speed,
+                        settings.park,
                     ))
                 }
                 Action::Practice => {
@@ -175,6 +175,7 @@ async fn main() {
                         settings.practice(),
                         settings.delivery,
                         settings.speed,
+                        settings.park,
                     ))
                 }
                 Action::Menu => screen = Screen::Menu,
@@ -183,7 +184,8 @@ async fn main() {
                 | Action::Preview
                 | Action::Sensitivity
                 | Action::Hand
-                | Action::Form => settings.change(action),
+                | Action::Form
+                | Action::Park => settings.change(action),
                 Action::Pause | Action::Resume => {
                     if let Screen::Game(run) = &mut screen {
                         if matches!(action, Action::Pause) {
@@ -199,9 +201,9 @@ async fn main() {
     }
 }
 
-fn draw_idle(camera: &Camera3D, delivery: Delivery) {
+fn draw_idle(camera: &Camera3D, delivery: Delivery, park: Park) {
     set_camera(camera);
-    field();
+    field(park);
     pitcher(-batting::WINDUP, delivery);
     set_default_camera();
 }
@@ -211,7 +213,7 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: bool) {
         Phase::Flight(flight) => {
             let follow = flight_camera(flight.position, flight.velocity, flight.elapsed);
             set_camera(&follow);
-            field();
+            field(play.park);
             let trail_step = flight.elapsed.min(0.13) / 7.0;
             for i in 0..7 {
                 let start = flight.position - flight.velocity * (i as f32 * trail_step);
@@ -226,7 +228,7 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: bool) {
         }
         _ => {
             set_camera(camera);
-            field();
+            field(play.park);
             pitcher(play.time, play.pitch.delivery);
             bat(play.time, &play.aim);
             if matches!(play.phase, Phase::Pitch) && play.time >= 0.0 {
