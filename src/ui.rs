@@ -1,7 +1,7 @@
 use macroquad::prelude::*;
 
 use crate::batting::{Grade, MEET_RADIUS};
-use crate::pitch::PitchKind;
+use crate::pitch::{PitchKind, ThrowingHand};
 use crate::play::{Phase, ResultCard};
 use crate::session::{CHALLENGE_LENGTH, Mode, Record, Session};
 
@@ -20,6 +20,7 @@ pub enum Action {
     Speed,
     Preview,
     Sensitivity,
+    Hand,
     Pause,
     Resume,
     Menu,
@@ -30,6 +31,7 @@ pub struct Settings {
     pub slow: bool,
     pub preview: bool,
     sensitivity: usize,
+    pub hand: ThrowingHand,
 }
 
 impl Default for Settings {
@@ -39,6 +41,7 @@ impl Default for Settings {
             slow: false,
             preview: false,
             sensitivity: 1,
+            hand: ThrowingHand::Right,
         }
     }
 }
@@ -66,6 +69,13 @@ impl Settings {
             Action::Speed => self.slow = !self.slow,
             Action::Preview => self.preview = !self.preview,
             Action::Sensitivity => self.sensitivity = (self.sensitivity + 1) % 3,
+            Action::Hand => {
+                self.hand = if self.hand == ThrowingHand::Right {
+                    ThrowingHand::Left
+                } else {
+                    ThrowingHand::Right
+                }
+            }
             _ => {}
         }
     }
@@ -178,8 +188,13 @@ impl<'a> Ui<'a> {
         );
         let sensitivity_label = ["低い", "標準", "高い"][settings.sensitivity];
         let sensitivity = self.button(
-            rect(24.0, 420.0, 388.0, 44.0),
-            &format!("マウス感度  {sensitivity_label}"),
+            rect(24.0, 420.0, 188.0, 44.0),
+            &format!("感度  {sensitivity_label}"),
+            false,
+        );
+        let hand = self.button(
+            rect(224.0, 420.0, 188.0, 44.0),
+            settings.hand.label(),
             false,
         );
         self.text(
@@ -196,6 +211,7 @@ impl<'a> Ui<'a> {
             (speed, Action::Speed),
             (preview, Action::Preview),
             (sensitivity, Action::Sensitivity),
+            (hand, Action::Hand),
         ]
         .into_iter()
         .find_map(|(hit, action)| hit.then_some(action))

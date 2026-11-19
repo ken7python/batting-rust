@@ -1,5 +1,5 @@
 use crate::flight::Outcome;
-use crate::pitch::{Pitch, PitchKind};
+use crate::pitch::{Pitch, PitchKind, ThrowingHand};
 use crate::play::{Phase, Play};
 
 pub const CHALLENGE_LENGTH: u32 = 10;
@@ -16,11 +16,11 @@ pub enum Mode {
 }
 
 impl Mode {
-    pub fn next_pitch(self, completed: u32) -> Pitch {
+    pub fn next_pitch(self, completed: u32, hand: ThrowingHand) -> Pitch {
         match self {
-            Self::Challenge => Pitch::random(None, completed < 2, 1.0),
+            Self::Challenge => Pitch::random(None, completed < 2, 1.0, hand),
             Self::Practice { kind, slow, .. } => {
-                Pitch::random(kind, false, if slow { 0.65 } else { 1.0 })
+                Pitch::random(kind, false, if slow { 0.65 } else { 1.0 }, hand)
             }
         }
     }
@@ -64,11 +64,11 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn new(mode: Mode) -> Self {
+    pub fn new(mode: Mode, hand: ThrowingHand) -> Self {
         Self {
             mode,
             record: Record::default(),
-            play: Play::new(mode.next_pitch(0)),
+            play: Play::new(mode.next_pitch(0, hand)),
             paused: false,
         }
     }
@@ -95,8 +95,10 @@ impl Session {
         if matches!(self.mode, Mode::Challenge) && self.record.completed >= CHALLENGE_LENGTH {
             return Some(self.record);
         }
-        self.play
-            .next_pitch(self.mode.next_pitch(self.record.completed));
+        self.play.next_pitch(
+            self.mode
+                .next_pitch(self.record.completed, self.play.pitch.hand),
+        );
         None
     }
 }
@@ -107,7 +109,7 @@ mod tests {
 
     #[test]
     fn ten_pitch_round_records_each_pitch_once_including_takes() {
-        let mut run = Session::new(Mode::Challenge);
+        let mut run = Session::new(Mode::Challenge, ThrowingHand::Right);
         assert_eq!(run.play.pitch.kind, PitchKind::Fastball);
         let mut result = None;
         for _ in 0..4000 {
@@ -127,11 +129,14 @@ mod tests {
 
     #[test]
     fn practice_keeps_pitch_selection_and_pause_cancels_held_swing() {
-        let mut run = Session::new(Mode::Practice {
-            kind: Some(PitchKind::Curve),
-            slow: true,
-            preview: true,
-        });
+        let mut run = Session::new(
+            Mode::Practice {
+                kind: Some(PitchKind::Curve),
+                slow: true,
+                preview: true,
+            },
+            ThrowingHand::Left,
+        );
         run.play.aim.press();
         run.pause();
         let previous_time = run.play.time;
@@ -142,6 +147,7 @@ mod tests {
         for _ in 0..4000 {
             assert!(run.tick(1.0 / 60.0).is_none());
             assert_eq!(run.play.pitch.kind, PitchKind::Curve);
+            assert_eq!(run.play.pitch.hand, ThrowingHand::Left);
         }
         assert!(run.record.completed > 10);
     }
