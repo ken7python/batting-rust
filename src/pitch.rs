@@ -25,10 +25,10 @@ impl PitchSpeed {
 
     fn multiplier(self) -> f64 {
         match self {
-            Self::Slow => 0.65,
-            Self::Normal => 1.0,
-            Self::High => 1.12,
-            Self::Real => 1.25,
+            Self::Slow => 0.60,
+            Self::Normal => 0.88,
+            Self::High => 1.04,
+            Self::Real => 1.15,
         }
     }
 }
@@ -437,18 +437,17 @@ mod tests {
                 );
             }
         }
-        let real = Pitch::new(
-            PitchKind::Fastball,
-            Delivery {
-                hand: ThrowingHand::Left,
-                ..Default::default()
-            },
-            CENTER,
-            PitchSpeed::Real,
-            0.5,
-            BreakSize::Normal,
-        );
-        assert!((real.average_kmh() - 149.0).abs() < 1.0);
+        for (speed, expected_kmh) in PitchSpeed::ALL.into_iter().zip([72.0, 105.0, 124.0, 137.0]) {
+            let fastball = Pitch::new(
+                PitchKind::Fastball,
+                Delivery::default(),
+                CENTER,
+                speed,
+                0.5,
+                BreakSize::Normal,
+            );
+            assert_eq!(fastball.average_kmh().round(), expected_kmh, "{speed:?}");
+        }
     }
 
     #[test]

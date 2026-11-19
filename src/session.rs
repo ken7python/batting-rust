@@ -142,7 +142,7 @@ mod tests {
             );
             for completed in 0..2 {
                 assert_eq!(run.record.completed, completed);
-                assert!((140.0..160.0).contains(&run.play.pitch.average_kmh()));
+                assert!((129.0..147.0).contains(&run.play.pitch.average_kmh()));
                 // Take the pitch and wait through its result to reach the next delivery.
                 run.tick(crate::batting::WINDUP + run.play.pitch.end_time() + 0.01);
                 run.tick(RESULT_SECONDS + 0.01);
