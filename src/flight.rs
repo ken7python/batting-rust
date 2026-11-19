@@ -47,10 +47,11 @@ impl Flight {
             - 0.65 * (grade.offset / MEET_RADIUS).length()
             - 0.35 * (grade.timing.abs() as f32 / 0.065))
             .clamp(0.0, 1.0);
+        let squared_quality = quality * quality;
         let speed = if strong {
-            49.0 + 11.0 * quality
+            35.0 + 23.0 * squared_quality
         } else {
-            31.0 + 12.0 * quality
+            24.0 + 11.0 * squared_quality
         };
         let horizontal =
             (grade.timing as f32 / 0.065 * 1.05 + grade.offset.x * 0.48).clamp(-1.18, 1.18);
@@ -150,8 +151,8 @@ mod tests {
     use super::*;
     use crate::batting::CENTER;
 
-    fn simulate(frame_time: f64, grade: Grade) -> (Outcome, Vec3) {
-        let mut flight = Flight::new(CENTER, grade, Park::Central);
+    fn simulate(frame_time: f64, grade: Grade, park: Park) -> (Outcome, Vec3) {
+        let mut flight = Flight::new(CENTER, grade, park);
         for _ in 0..2000 {
             if let Some(outcome) = flight.advance(frame_time) {
                 return (outcome, flight.position);
@@ -167,8 +168,8 @@ mod tests {
             timing: 0.0,
             offset: Vec2::ZERO,
         };
-        let (a, p) = simulate(1.0 / 30.0, ideal);
-        let (b, q) = simulate(1.0 / 144.0, ideal);
+        let (a, p) = simulate(1.0 / 30.0, ideal, Park::Central);
+        let (b, q) = simulate(1.0 / 144.0, ideal, Park::Central);
         assert_eq!(a, Outcome::Homer);
         assert_eq!(a, b);
         assert_eq!(p, q);
@@ -215,13 +216,43 @@ mod tests {
     }
 
     #[test]
+    fn glancing_and_late_hits_stay_in_both_parks_but_centered_contact_clears_them() {
+        use crate::batting::{SWING_LEAD, Swing, grade};
+        let arrival = 0.48;
+        for park in [Park::Central, Park::Sunset] {
+            for (timing, offset) in [
+                (0.0, vec2(0.03, -0.10)),
+                (0.04, Vec2::ZERO),
+                (0.0, Vec2::ZERO),
+            ] {
+                let hit = grade(
+                    Swing {
+                        time: arrival - SWING_LEAD + timing,
+                        aim: CENTER + offset,
+                    },
+                    arrival,
+                    CENTER,
+                );
+                let (outcome, end) = simulate(1.0 / 60.0, hit, park);
+                if hit.contact == Contact::Barrel {
+                    assert_eq!(outcome, Outcome::Homer);
+                } else {
+                    assert_eq!(hit.contact, Contact::Touch);
+                    assert_eq!(outcome, Outcome::Fair);
+                    assert!(end.xz().length() < park.fence().0 - 5.0);
+                }
+            }
+        }
+    }
+
+    #[test]
     fn an_early_glancing_swing_can_go_foul() {
         let early = Grade {
             contact: Contact::Touch,
             timing: -0.064,
             offset: Vec2::ZERO,
         };
-        let (result, point) = simulate(1.0 / 60.0, early);
+        let (result, point) = simulate(1.0 / 60.0, early, Park::Central);
         assert_eq!(result, Outcome::Foul);
         assert!(point.x < point.z);
     }
