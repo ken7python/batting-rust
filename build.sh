@@ -16,6 +16,7 @@ build_web() {
     output="$repo/dist/web"
     mkdir -p "$output/licenses"
     install -m 644 web/index.html "$output/index.html"
+    install -m 644 web/favicon.png web/apple-touch-icon.png "$output/"
     install -m 644 "$target_dir/$target/release/batting.wasm" "$output/batting.wasm"
     # Only the plugins used by the game are needed in the loader.
     cat "$miniquad/js/gl.js" "$quad_snd/js/audio.js" > "$output/mq_js_bundle.js"
@@ -28,7 +29,7 @@ build_web() {
 build_pages() {
     build_web
     mkdir -p play/licenses
-    install -m 644 dist/web/batting.wasm dist/web/mq_js_bundle.js play/
+    install -m 644 dist/web/batting.wasm dist/web/mq_js_bundle.js dist/web/favicon.png dist/web/apple-touch-icon.png play/
     install -m 644 dist/web/licenses/*.txt play/licenses/
     touch .nojekyll
     python3 - <<'PY'
@@ -37,7 +38,7 @@ from pathlib import Path
 
 html = Path("dist/web/index.html").read_text(encoding="utf-8")
 html = html.replace("<head>", '<head>\n  <base href="./play/">', 1)
-for filename in ("batting.wasm", "mq_js_bundle.js"):
+for filename in ("batting.wasm", "mq_js_bundle.js", "favicon.png", "apple-touch-icon.png"):
     revision = sha256((Path("play") / filename).read_bytes()).hexdigest()[:12]
     html = html.replace(f'"./{filename}"', f'"./{filename}?v={revision}"')
 Path("index.html").write_text(html, encoding="utf-8")
@@ -57,6 +58,7 @@ build_macos() {
     bundle="$repo/dist/macos/Batting.app"
     mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
     install -m 644 macos/Info.plist "$bundle/Contents/Info.plist"
+    install -m 644 macos/Batting.icns "$bundle/Contents/Resources/"
     install -m 755 "$target_dir/$target/release/batting" "$bundle/Contents/MacOS/batting"
     install -m 644 assets/OFL-NotoSansJP.txt "$bundle/Contents/Resources/OFL-NotoSansJP.txt"
     if [[ "$(uname -s)" == Darwin ]]; then
