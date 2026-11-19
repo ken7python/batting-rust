@@ -4,6 +4,7 @@ mod pitch;
 mod play;
 mod scene;
 mod session;
+mod sound;
 mod ui;
 
 use macroquad::input::utils::{register_input_subscriber, repeat_all_miniquad_input};
@@ -12,6 +13,7 @@ use macroquad::prelude::*;
 use play::{Phase, Play};
 use scene::*;
 use session::{Mode, Record, Session};
+use sound::Sounds;
 use ui::{Action, Settings, Ui};
 
 const SKY: Color = Color::from_rgba(147, 198, 218, 255);
@@ -50,6 +52,7 @@ fn window_conf() -> Conf {
 async fn main() {
     let font = load_ttf_font_from_bytes(include_bytes!("../assets/BattingSans.ttf"))
         .expect("bundled UI font must be a valid TTF");
+    let sounds = Sounds::load().await;
     let mut screen = Screen::Menu;
     let mut settings = Settings::default();
     let subscriber = register_input_subscriber();
@@ -88,12 +91,20 @@ async fn main() {
                 let at = session.play.time + dt;
                 if is_mouse_button_released(MouseButton::Left) && at < session.play.pitch.end_time()
                 {
+                    if aim.held {
+                        sounds.swing();
+                    }
                     aim.release(at);
                 } else if !is_mouse_button_down(MouseButton::Left) {
                     aim.held = false;
                 }
             }
-            if let Some(record) = session.tick(dt) {
+            let was_pitched = matches!(session.play.phase, Phase::Pitch);
+            let summary = session.tick(dt);
+            if was_pitched && let Phase::Flight(flight) = &session.play.phase {
+                sounds.contact(flight.strong);
+            }
+            if let Some(record) = summary {
                 screen = Screen::Summary(record);
             }
         }
@@ -154,6 +165,16 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: bool) {
             let follow = flight_camera(flight.position, flight.velocity, flight.elapsed);
             set_camera(&follow);
             field();
+            let trail_step = flight.elapsed.min(0.13) / 7.0;
+            for i in 0..7 {
+                let start = flight.position - flight.velocity * (i as f32 * trail_step);
+                let end = start - flight.velocity * trail_step;
+                draw_line_3d(
+                    start,
+                    end,
+                    Color::new(1.0, 0.88, 0.58, 0.9 - i as f32 * 0.11),
+                );
+            }
             ball(flight.position);
         }
         _ => {
