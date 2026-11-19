@@ -2,6 +2,8 @@ use macroquad::prelude::*;
 
 use crate::batting::{BALL_RADIUS, CATCH_DELAY, CENTER, ZONE_MAX, ZONE_MIN};
 
+const BASE_ARC: Vec2 = vec2(0.0, 0.32);
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum PitchSpeed {
     Slow,
@@ -133,18 +135,19 @@ impl PitchKind {
     }
 
     fn profile(self) -> ((f32, f32), Vec2, Vec2) {
+        // The two break vectors are fractions of the zone width and height.
         match self {
-            Self::Fastball => ((0.46, 0.52), vec2(0.0, 0.32), vec2(0.02, -0.035)),
-            Self::Slider => ((0.51, 0.59), vec2(0.13, 0.41), vec2(0.79, 0.22)),
-            Self::Curve => ((0.61, 0.74), vec2(0.12, 0.94), vec2(0.25, 0.68)),
-            Self::Forkball => ((0.53, 0.61), vec2(0.02, 0.34), vec2(0.04, 0.91)),
-            Self::Changeup => ((0.60, 0.70), vec2(-0.10, 0.48), vec2(-0.23, 0.17)),
-            Self::TwoSeam => ((0.47, 0.54), vec2(-0.09, 0.33), vec2(-0.37, 0.05)),
-            Self::Cutter => ((0.48, 0.55), vec2(0.06, 0.34), vec2(0.32, 0.04)),
-            Self::Sinker => ((0.50, 0.59), vec2(-0.14, 0.39), vec2(-0.62, 0.42)),
-            Self::Splitter => ((0.53, 0.61), vec2(0.04, 0.35), vec2(-0.15, 0.64)),
-            Self::Sweeper => ((0.56, 0.66), vec2(0.48, 0.41), vec2(1.18, 0.14)),
-            Self::Knuckleball => ((0.68, 0.84), vec2(0.02, 0.57), vec2(-0.05, 0.29)),
+            Self::Fastball => ((0.46, 0.52), Vec2::ZERO, vec2(0.025, -0.030)),
+            Self::Slider => ((0.51, 0.59), vec2(0.060, 0.015), vec2(0.265, 0.065)),
+            Self::Curve => ((0.61, 0.74), vec2(0.040, 0.170), vec2(0.055, 0.150)),
+            Self::Forkball => ((0.53, 0.61), vec2(0.007, 0.020), vec2(0.020, 0.280)),
+            Self::Changeup => ((0.60, 0.70), vec2(-0.090, 0.095), vec2(-0.100, 0.100)),
+            Self::TwoSeam => ((0.47, 0.54), vec2(-0.070, 0.008), vec2(-0.150, 0.030)),
+            Self::Cutter => ((0.48, 0.55), vec2(0.045, 0.010), vec2(0.145, 0.015)),
+            Self::Sinker => ((0.50, 0.59), vec2(-0.080, 0.035), vec2(-0.195, 0.115)),
+            Self::Splitter => ((0.53, 0.61), vec2(0.020, 0.027), vec2(-0.060, 0.235)),
+            Self::Sweeper => ((0.56, 0.66), vec2(0.120, 0.020), vec2(0.230, 0.033)),
+            Self::Knuckleball => ((0.68, 0.84), vec2(0.012, 0.105), vec2(-0.022, 0.112)),
         }
     }
 }
@@ -211,9 +214,9 @@ impl BreakSize {
 
     fn multiplier(self) -> f32 {
         match self {
-            Self::Small => 0.55,
-            Self::Normal => 0.85,
-            Self::Large => 1.28,
+            Self::Small => 0.65,
+            Self::Normal => 1.0,
+            Self::Large => 1.5,
         }
     }
 }
@@ -328,20 +331,20 @@ impl Pitch {
 
     pub fn position(self, elapsed: f64) -> Vec3 {
         let u = (elapsed / self.duration).max(0.0) as f32;
-        let (_, arc, late_break) = self.kind.profile();
+        let (_, early_break, late_break) = self.kind.profile();
         let shape = |t: f32| {
-            let taper = t * (1.0 - t);
-            let base_arc = vec2(0.0, 0.32);
-            let mut pitch_break =
-                (arc - base_arc) * (4.0 * taper) + late_break * (6.0 * t * t * taper);
+            let arc = 4.0 * t * (1.0 - t);
+            // The late curve peaks at 1.0 three quarters of the way to the plate.
+            let late = (256.0 / 27.0) * t * t * t * (1.0 - t);
+            let mut pitch_break = early_break * arc + late_break * late;
             if self.kind == PitchKind::Knuckleball {
                 let phase = self.wobble_phase + t * 19.0;
-                pitch_break +=
-                    vec2(phase.sin() * 0.22, (phase * 0.74).cos() * 0.11) * (4.0 * taper);
+                pitch_break += vec2(phase.sin() * 0.14, (phase * 0.74).cos() * 0.07) * arc;
             }
-            let mut movement =
-                base_arc * (4.0 * taper) + pitch_break * self.break_size.multiplier();
-            movement.x *= self.delivery.hand.sign();
+            let mut pitch_break =
+                (pitch_break * self.break_size.multiplier()).clamp_length_max(1.0);
+            pitch_break.x *= self.delivery.hand.sign();
+            let movement = BASE_ARC * arc + pitch_break * (ZONE_MAX - ZONE_MIN);
             self.delivery.release().lerp(self.crossing.extend(0.0), t) + movement.extend(0.0)
         };
         if u <= 1.0 {
@@ -396,7 +399,7 @@ mod tests {
         let target = vec2(-0.12, 0.73);
         let progress = 0.75;
         let baseline = delivery.release().lerp(target.extend(0.0), progress)
-            + vec3(0.0, 0.32 * 4.0 * progress * (1.0 - progress), 0.0);
+            + (BASE_ARC * (4.0 * progress * (1.0 - progress))).extend(0.0);
         for kind in PitchKind::ALL {
             let pitches = [BreakSize::Small, BreakSize::Normal, BreakSize::Large].map(|strength| {
                 Pitch::new(kind, delivery, target, PitchSpeed::High, 0.5, strength)
@@ -416,6 +419,51 @@ mod tests {
                 deviations[0] < deviations[1] && deviations[1] < deviations[2],
                 "{kind:?}"
             );
+        }
+    }
+
+    #[test]
+    fn pitch_breaks_stay_within_the_intended_zone_fractions() {
+        for kind in PitchKind::ALL {
+            for (size, limit) in [
+                (BreakSize::Small, 0.22),
+                (BreakSize::Normal, 1.0 / 3.0),
+                (BreakSize::Large, 0.50),
+            ] {
+                for sample in (0..=16).map(|step| step as f32 / 16.0) {
+                    let pitch = Pitch::new(
+                        kind,
+                        Delivery::default(),
+                        CENTER,
+                        PitchSpeed::Normal,
+                        sample,
+                        size,
+                    );
+                    let peak = (0..=128)
+                        .map(|step| {
+                            let t = step as f32 / 128.0;
+                            let baseline = pitch.delivery.release().lerp(CENTER.extend(0.0), t)
+                                + (BASE_ARC * (4.0 * t * (1.0 - t))).extend(0.0);
+                            let offset = pitch.position(pitch.duration * f64::from(t)) - baseline;
+                            (offset.truncate() / (ZONE_MAX - ZONE_MIN)).length()
+                        })
+                        .fold(0.0, f32::max);
+                    assert!(peak <= limit, "{kind:?} at {size:?}: {peak}");
+                    if size == BreakSize::Normal
+                        && matches!(
+                            kind,
+                            PitchKind::Slider
+                                | PitchKind::Curve
+                                | PitchKind::Forkball
+                                | PitchKind::Sinker
+                                | PitchKind::Splitter
+                                | PitchKind::Sweeper
+                        )
+                    {
+                        assert!(peak >= 0.25, "{kind:?}: {peak}");
+                    }
+                }
+            }
         }
     }
 
@@ -491,7 +539,7 @@ mod tests {
         );
         assert!(
             curve.position(curve.duration * 0.6).y
-                > fastball.position(fastball.duration * 0.6).y + 0.5
+                > fastball.position(fastball.duration * 0.6).y + 0.12
         );
         assert!(curve.duration > fastball.duration);
     }
