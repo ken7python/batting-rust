@@ -325,28 +325,65 @@ impl Pitch {
         f64::from(self.delivery.release().z.abs()) / self.duration * 3.6
     }
 
-    pub fn preview_point(self) -> Vec3 {
-        self.position(self.bounce_time.unwrap_or(self.duration))
+    pub fn preview_point(self, elapsed: f64) -> Vec3 {
+        let end = self.bounce_time.unwrap_or(self.duration);
+        if self.kind == PitchKind::Fastball || elapsed >= end {
+            return self.position(end);
+        }
+
+        let now = (elapsed / self.duration).max(0.0) as f32;
+        let previous = (now - 0.015).max(0.0);
+        let sample_end = now.max(0.006);
+        let bend = self.break_at(now);
+        let direction =
+            (self.break_at(sample_end) - self.break_at(previous)) / (sample_end - previous);
+        // Project the break observed so far forward while retaining the baseline drop.
+        let forecast = |t: f32| {
+            let projected_break = (bend + direction * (t - now)).clamp_length_max(1.0);
+            self.baseline_at(t) + (projected_break * (ZONE_MAX - ZONE_MIN)).extend(0.0)
+        };
+        let plate = forecast(1.0);
+        if plate.y >= BALL_RADIUS {
+            return plate;
+        }
+
+        let (mut low, mut high) = (now, 1.0);
+        for _ in 0..16 {
+            let middle = (low + high) * 0.5;
+            if forecast(middle).y <= BALL_RADIUS {
+                high = middle;
+            } else {
+                low = middle;
+            }
+        }
+        let bounce = forecast(high);
+        vec3(bounce.x, BALL_RADIUS, bounce.z)
+    }
+
+    fn baseline_at(self, t: f32) -> Vec3 {
+        self.delivery.release().lerp(self.crossing.extend(0.0), t)
+            + (BASE_ARC * (4.0 * t * (1.0 - t))).extend(0.0)
+    }
+
+    fn break_at(self, t: f32) -> Vec2 {
+        let (_, early_break, late_break) = self.kind.profile();
+        let arc = 4.0 * t * (1.0 - t);
+        // The late curve peaks at 1.0 three quarters of the way to the plate.
+        let late = (256.0 / 27.0) * t * t * t * (1.0 - t);
+        let mut bend = early_break * arc + late_break * late;
+        if self.kind == PitchKind::Knuckleball {
+            let phase = self.wobble_phase + t * 19.0;
+            bend += vec2(phase.sin() * 0.14, (phase * 0.74).cos() * 0.07) * arc;
+        }
+        let mut bend = (bend * self.break_size.multiplier()).clamp_length_max(1.0);
+        bend.x *= self.delivery.hand.sign();
+        bend
     }
 
     pub fn position(self, elapsed: f64) -> Vec3 {
         let u = (elapsed / self.duration).max(0.0) as f32;
-        let (_, early_break, late_break) = self.kind.profile();
-        let shape = |t: f32| {
-            let arc = 4.0 * t * (1.0 - t);
-            // The late curve peaks at 1.0 three quarters of the way to the plate.
-            let late = (256.0 / 27.0) * t * t * t * (1.0 - t);
-            let mut pitch_break = early_break * arc + late_break * late;
-            if self.kind == PitchKind::Knuckleball {
-                let phase = self.wobble_phase + t * 19.0;
-                pitch_break += vec2(phase.sin() * 0.14, (phase * 0.74).cos() * 0.07) * arc;
-            }
-            let mut pitch_break =
-                (pitch_break * self.break_size.multiplier()).clamp_length_max(1.0);
-            pitch_break.x *= self.delivery.hand.sign();
-            let movement = BASE_ARC * arc + pitch_break * (ZONE_MAX - ZONE_MIN);
-            self.delivery.release().lerp(self.crossing.extend(0.0), t) + movement.extend(0.0)
-        };
+        let shape =
+            |t| self.baseline_at(t) + (self.break_at(t) * (ZONE_MAX - ZONE_MIN)).extend(0.0);
         if u <= 1.0 {
             shape(u)
         } else {
@@ -556,8 +593,50 @@ mod tests {
         );
         assert!(pitch.end_time() < pitch.duration);
         let bounce = pitch.position(pitch.end_time());
-        assert_eq!(pitch.preview_point(), bounce);
+        let early = pitch.preview_point(0.0);
+        let later = pitch.preview_point(pitch.end_time() * 0.75);
+        assert!(early.z < 0.0 && later.z < 0.0);
+        assert!(early.distance(later) > 0.05);
+        assert_eq!(pitch.preview_point(pitch.end_time()), bounce);
         assert!((bounce.y - BALL_RADIUS).abs() < 1e-5 && bounce.z < 0.0);
+    }
+
+    #[test]
+    fn preview_updates_for_a_slider_and_reaches_the_plate_crossing() {
+        let make = |kind| {
+            Pitch::new(
+                kind,
+                Delivery::default(),
+                CENTER,
+                PitchSpeed::Normal,
+                0.5,
+                BreakSize::Normal,
+            )
+        };
+        let slider = make(PitchKind::Slider);
+        let early = slider.preview_point(0.0);
+        let midflight = slider.preview_point(slider.duration * 0.55);
+        assert_eq!(early.z, 0.0);
+        assert_eq!(midflight.z, 0.0);
+        assert!(early.distance(midflight) > 0.05);
+        assert_ne!(early.truncate(), CENTER);
+        assert!(
+            slider
+                .preview_point(slider.duration * 0.999)
+                .distance(CENTER.extend(0.0))
+                < 0.005
+        );
+        assert!(
+            slider
+                .preview_point(slider.duration)
+                .abs_diff_eq(CENTER.extend(0.0), 1e-5)
+        );
+
+        let fastball = make(PitchKind::Fastball);
+        assert_eq!(
+            fastball.preview_point(0.0),
+            fastball.preview_point(fastball.duration * 0.8)
+        );
     }
 
     #[test]
