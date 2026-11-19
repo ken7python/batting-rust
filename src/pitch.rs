@@ -3,6 +3,37 @@ use macroquad::prelude::*;
 use crate::batting::{BALL_RADIUS, CATCH_DELAY, CENTER, ZONE_MAX, ZONE_MIN};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PitchSpeed {
+    Slow,
+    #[default]
+    Normal,
+    High,
+    Real,
+}
+
+impl PitchSpeed {
+    pub const ALL: [Self; 4] = [Self::Slow, Self::Normal, Self::High, Self::Real];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Slow => "スロー",
+            Self::Normal => "通常",
+            Self::High => "ハイ",
+            Self::Real => "リアル",
+        }
+    }
+
+    fn multiplier(self) -> f64 {
+        match self {
+            Self::Slow => 0.65,
+            Self::Normal => 1.0,
+            Self::High => 1.12,
+            Self::Real => 1.25,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ThrowingHand {
     #[default]
     Right,
@@ -105,7 +136,7 @@ impl Pitch {
         kind: PitchKind,
         hand: ThrowingHand,
         crossing: Vec2,
-        speed: f64,
+        speed: PitchSpeed,
         sample: f32,
     ) -> Self {
         let ((min, max), _, _) = kind.profile();
@@ -113,7 +144,7 @@ impl Pitch {
             kind,
             hand,
             crossing,
-            duration: f64::from(min + (max - min) * sample) / speed,
+            duration: f64::from(min + (max - min) * sample) / speed.multiplier(),
             bounce_time: None,
             wobble_phase: sample * std::f32::consts::TAU,
         };
@@ -132,7 +163,12 @@ impl Pitch {
         pitch
     }
 
-    pub fn random(fixed: Option<PitchKind>, opening: bool, speed: f64, hand: ThrowingHand) -> Self {
+    pub fn random(
+        fixed: Option<PitchKind>,
+        opening: bool,
+        speed: PitchSpeed,
+        hand: ThrowingHand,
+    ) -> Self {
         let kind = if opening {
             PitchKind::Fastball
         } else {
@@ -165,6 +201,10 @@ impl Pitch {
         self.bounce_time.unwrap_or(self.duration + CATCH_DELAY)
     }
 
+    pub fn average_kmh(self) -> f64 {
+        f64::from(self.hand.release().z.abs()) / self.duration * 3.6
+    }
+
     pub fn position(self, elapsed: f64) -> Vec3 {
         let u = (elapsed / self.duration).max(0.0) as f32;
         let (_, arc, late_break) = self.kind.profile();
@@ -194,10 +234,34 @@ mod tests {
     use super::*;
 
     #[test]
+    fn faster_presets_shorten_every_pitch_without_moving_its_break() {
+        for kind in PitchKind::ALL {
+            let pitches = PitchSpeed::ALL
+                .map(|speed| Pitch::new(kind, ThrowingHand::Right, CENTER, speed, 0.5));
+            for pair in pitches.windows(2) {
+                assert!(pair[0].duration > pair[1].duration);
+                assert!(
+                    pair[0]
+                        .position(pair[0].duration * 0.75)
+                        .abs_diff_eq(pair[1].position(pair[1].duration * 0.75), 1e-5)
+                );
+            }
+        }
+        let real = Pitch::new(
+            PitchKind::Fastball,
+            ThrowingHand::Left,
+            CENTER,
+            PitchSpeed::Real,
+            0.5,
+        );
+        assert!((real.average_kmh() - 149.0).abs() < 1.0);
+    }
+
+    #[test]
     fn each_pitch_releases_from_the_hand_and_crosses_the_selected_target() {
         let target = vec2(-0.12, 0.73);
         for kind in PitchKind::ALL {
-            let pitch = Pitch::new(kind, ThrowingHand::Right, target, 1.0, 0.5);
+            let pitch = Pitch::new(kind, ThrowingHand::Right, target, PitchSpeed::Normal, 0.5);
             assert_eq!(pitch.position(0.0), ThrowingHand::Right.release());
             assert!(
                 pitch
@@ -205,8 +269,20 @@ mod tests {
                     .abs_diff_eq(target.extend(0.0), 1e-5)
             );
         }
-        let fastball = Pitch::new(PitchKind::Fastball, ThrowingHand::Right, target, 1.0, 0.5);
-        let curve = Pitch::new(PitchKind::Curve, ThrowingHand::Right, target, 1.0, 0.5);
+        let fastball = Pitch::new(
+            PitchKind::Fastball,
+            ThrowingHand::Right,
+            target,
+            PitchSpeed::Normal,
+            0.5,
+        );
+        let curve = Pitch::new(
+            PitchKind::Curve,
+            ThrowingHand::Right,
+            target,
+            PitchSpeed::Normal,
+            0.5,
+        );
         assert!(
             curve.position(curve.duration * 0.6).y
                 > fastball.position(fastball.duration * 0.6).y + 0.5
@@ -220,7 +296,7 @@ mod tests {
             PitchKind::Forkball,
             ThrowingHand::Right,
             vec2(0.0, -0.3),
-            1.0,
+            PitchSpeed::Normal,
             0.5,
         );
         assert!(pitch.end_time() < pitch.duration);
@@ -231,8 +307,8 @@ mod tests {
     #[test]
     fn switching_pitcher_hands_mirrors_the_break() {
         for kind in PitchKind::ALL {
-            let right = Pitch::new(kind, ThrowingHand::Right, CENTER, 1.0, 0.4);
-            let left = Pitch::new(kind, ThrowingHand::Left, CENTER, 1.0, 0.4);
+            let right = Pitch::new(kind, ThrowingHand::Right, CENTER, PitchSpeed::Normal, 0.4);
+            let left = Pitch::new(kind, ThrowingHand::Left, CENTER, PitchSpeed::Normal, 0.4);
             let a = right.position(right.duration * 0.73);
             let b = left.position(left.duration * 0.73);
             assert!(a.abs_diff_eq(vec3(-b.x, b.y, b.z), 1e-5));
