@@ -211,9 +211,9 @@ impl BreakSize {
 
     fn multiplier(self) -> f32 {
         match self {
-            Self::Small => 0.65,
-            Self::Normal => 1.0,
-            Self::Large => 1.5,
+            Self::Small => 0.55,
+            Self::Normal => 0.85,
+            Self::Large => 1.28,
         }
     }
 }
