@@ -25,6 +25,19 @@ pub fn batter_camera() -> Camera3D {
     }
 }
 
+pub fn flight_camera(ball: Vec3, velocity: Vec3, elapsed: f32) -> Camera3D {
+    let mut camera = batter_camera();
+    let direction = vec3(velocity.x, 0.0, velocity.z).normalize_or_zero();
+    let blend = (elapsed / 0.3).clamp(0.0, 1.0);
+    camera.position = camera
+        .position
+        .lerp(ball - direction * 7.5 + vec3(3.2, 2.5, 0.0), blend);
+    camera.target = camera
+        .target
+        .lerp(ball + direction * 5.0 - Vec3::Y * 0.75, blend);
+    camera
+}
+
 pub fn project(camera: &Camera3D, position: Vec3) -> Vec2 {
     let clip = camera.matrix() * position.extend(1.0);
     let ndc = clip.truncate() / clip.w;
@@ -220,7 +233,7 @@ pub fn ball(p: Vec3) {
 }
 
 pub fn bat(time: f64, aim: &Aim) {
-    let pivot = vec3(-0.77, aim.point.y, 0.22);
+    let pivot = vec3(-0.77 + aim.point.x, aim.point.y - 0.15, 0.22);
     let phase = aim
         .swing
         .map_or(0.0, |s| ((time - s.time) / 0.22).clamp(0.0, 1.0) as f32);
