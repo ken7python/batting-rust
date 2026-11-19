@@ -98,7 +98,7 @@ async fn main() {
         let dt = f64::from(get_frame_time().min(0.1));
         let camera = batter_camera();
         let size = vec2(screen_width(), screen_height());
-        let ui = Ui::new(&font);
+        let mut ui = Ui::new(&font);
 
         if let Screen::Game(session) = &mut screen {
             if input.lost {
@@ -160,6 +160,7 @@ async fn main() {
             }
         };
 
+        ui.draw();
         if let Some(action) = action {
             match action {
                 Action::Challenge => {

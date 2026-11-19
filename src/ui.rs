@@ -103,11 +103,23 @@ impl Settings {
     }
 }
 
+enum Draw {
+    Text {
+        label: String,
+        position: Vec2,
+        size: u16,
+        color: Color,
+    },
+    Fill(Rect, Color),
+    Border(Rect, Color),
+}
+
 pub struct Ui<'a> {
     font: &'a Font,
     scale: f32,
     mouse: Vec2,
     pressed: bool,
+    draws: Vec<Draw>,
 }
 
 impl<'a> Ui<'a> {
@@ -119,29 +131,65 @@ impl<'a> Ui<'a> {
                 .clamp(0.40, 1.7),
             mouse: Vec2::from(mouse_position()),
             pressed: is_mouse_button_pressed(MouseButton::Left),
+            draws: Vec::new(),
         }
     }
 
-    fn text(&self, label: &str, x: f32, baseline: f32, size: f32, color: Color) {
-        draw_text_ex(
-            label,
-            x,
-            baseline,
-            TextParams {
-                font: Some(self.font),
-                font_size: (size * self.scale).round() as u16,
-                color,
-                ..Default::default()
-            },
-        );
+    fn text(&mut self, label: &str, x: f32, baseline: f32, size: f32, color: Color) {
+        self.draws.push(Draw::Text {
+            label: label.into(),
+            position: vec2(x, baseline),
+            size: (size * self.scale).round() as u16,
+            color,
+        });
     }
 
-    fn panel(&self, rect: Rect) {
-        draw_rectangle(rect.x, rect.y, rect.w, rect.h, PANEL);
-        draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, self.scale, LINE);
+    fn fill(&mut self, x: f32, y: f32, w: f32, h: f32, color: Color) {
+        self.draws.push(Draw::Fill(Rect::new(x, y, w, h), color));
     }
 
-    fn button(&self, rect: Rect, title: &str, primary: bool) -> bool {
+    fn panel(&mut self, rect: Rect) {
+        self.draws.push(Draw::Fill(rect, PANEL));
+        self.draws.push(Draw::Border(rect, LINE));
+    }
+
+    pub fn draw(self) {
+        // Rasterize glyphs before drawing text so a growing atlas cannot invalidate
+        // a texture already queued by an earlier label.
+        for command in &self.draws {
+            if let Draw::Text { label, size, .. } = command {
+                measure_text(label, Some(self.font), *size, 1.0);
+            }
+        }
+        for command in self.draws {
+            match command {
+                Draw::Text {
+                    label,
+                    position,
+                    size,
+                    color,
+                } => {
+                    draw_text_ex(
+                        label,
+                        position.x,
+                        position.y,
+                        TextParams {
+                            font: Some(self.font),
+                            font_size: size,
+                            color,
+                            ..Default::default()
+                        },
+                    );
+                }
+                Draw::Fill(r, color) => draw_rectangle(r.x, r.y, r.w, r.h, color),
+                Draw::Border(r, color) => {
+                    draw_rectangle_lines(r.x, r.y, r.w, r.h, self.scale, color)
+                }
+            }
+        }
+    }
+
+    fn button(&mut self, rect: Rect, title: &str, primary: bool) -> bool {
         let hovered = rect.contains(self.mouse);
         let bg = match (primary, hovered) {
             (true, true) => CREAM,
@@ -149,9 +197,9 @@ impl<'a> Ui<'a> {
             (false, true) => Color::from_rgba(44, 81, 70, 255),
             (false, false) => INK,
         };
-        draw_rectangle(rect.x, rect.y, rect.w, rect.h, bg);
+        self.fill(rect.x, rect.y, rect.w, rect.h, bg);
         if !primary {
-            draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, self.scale, LINE);
+            self.draws.push(Draw::Border(rect, LINE));
         }
         self.text(
             title,
@@ -163,14 +211,14 @@ impl<'a> Ui<'a> {
         hovered && self.pressed
     }
 
-    pub fn menu(&self, settings: &Settings) -> Option<Action> {
+    pub fn menu(&mut self, settings: &Settings) -> Option<Action> {
         let s = self.scale;
         let x = 28.0 * s;
         let y = (screen_height() - 657.0 * s) * 0.5;
         let w = 436.0 * s;
         let rect = |x0, y0, width, height| Rect::new(x + x0 * s, y + y0 * s, width * s, height * s);
         self.panel(Rect::new(x, y, w, 657.0 * s));
-        draw_rectangle(x, y, w, 4.0 * s, AMBER);
+        self.fill(x, y, w, 4.0 * s, AMBER);
         self.text("3D BASEBALL", x + 24.0 * s, y + 43.0 * s, 16.0, AMBER);
         self.text("BATTING CLUB", x + 22.0 * s, y + 97.0 * s, 47.0, CREAM);
         self.text(
@@ -267,7 +315,7 @@ impl<'a> Ui<'a> {
         Rect::new(screen_width() - 140.0 * s, 20.0 * s, 120.0 * s, 42.0 * s)
     }
 
-    pub fn game(&self, session: &Session) -> Option<Action> {
+    pub fn game(&mut self, session: &Session) -> Option<Action> {
         let s = self.scale;
         let x = 20.0 * s;
         let y = 20.0 * s;
@@ -347,7 +395,7 @@ impl<'a> Ui<'a> {
         }
 
         if session.paused {
-            draw_rectangle(
+            self.fill(
                 0.0,
                 0.0,
                 screen_width(),
@@ -376,7 +424,7 @@ impl<'a> Ui<'a> {
         action
     }
 
-    fn feedback(&self, session: &Session, result: &ResultCard) {
+    fn feedback(&mut self, session: &Session, result: &ResultCard) {
         let s = self.scale;
         let x = (screen_width() - 422.0 * s) * 0.5;
         let y = screen_height() - 149.0 * s;
@@ -420,12 +468,12 @@ impl<'a> Ui<'a> {
         }
     }
 
-    pub fn summary(&self, record: Record) -> Option<Action> {
+    pub fn summary(&mut self, record: Record) -> Option<Action> {
         let s = self.scale;
         let x = (screen_width() - 390.0 * s) * 0.5;
         let y = (screen_height() - 385.0 * s) * 0.5;
         self.panel(Rect::new(x, y, 390.0 * s, 385.0 * s));
-        draw_rectangle(x, y, 390.0 * s, 4.0 * s, AMBER);
+        self.fill(x, y, 390.0 * s, 4.0 * s, AMBER);
         self.text(
             "10球チャレンジ結果",
             x + 23.0 * s,
