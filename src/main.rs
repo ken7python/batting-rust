@@ -26,15 +26,48 @@ enum Screen {
 }
 
 #[derive(Default)]
-struct Focus {
+struct FrameInput {
     lost: bool,
+    drag_from: Option<Vec2>,
+    actions: Vec<BatInput>,
 }
 
-impl EventHandler for Focus {
+enum BatInput {
+    Press(Vec2),
+    Drag(Vec2),
+    Release,
+}
+
+impl EventHandler for FrameInput {
     fn update(&mut self) {}
     fn draw(&mut self) {}
     fn window_minimized_event(&mut self) {
         self.lost = true;
+        self.drag_from = None;
+    }
+
+    fn mouse_button_down_event(&mut self, btn: MouseButton, x: f32, y: f32) {
+        if btn == MouseButton::Left {
+            let position = vec2(x, y);
+            self.drag_from = Some(position);
+            self.actions.push(BatInput::Press(position));
+        }
+    }
+
+    fn mouse_motion_event(&mut self, x: f32, y: f32) {
+        if let Some(from) = &mut self.drag_from {
+            let position = vec2(x, y);
+            self.actions.push(BatInput::Drag(position - *from));
+            *from = position;
+        }
+    }
+
+    fn mouse_button_up_event(&mut self, btn: MouseButton, x: f32, y: f32) {
+        if btn == MouseButton::Left {
+            self.mouse_motion_event(x, y);
+            self.drag_from = None;
+            self.actions.push(BatInput::Release);
+        }
     }
 }
 
@@ -57,20 +90,18 @@ async fn main() {
     let mut screen = Screen::Menu;
     let mut settings = Settings::default();
     let subscriber = register_input_subscriber();
-    let mut focus = Focus::default();
-    let mut previous_mouse = Vec2::from(mouse_position());
+    let mut input = FrameInput::default();
     let mut previous_size = Vec2::ZERO;
 
     loop {
-        repeat_all_miniquad_input(&mut focus, subscriber);
+        repeat_all_miniquad_input(&mut input, subscriber);
         let dt = f64::from(get_frame_time().min(0.1));
         let camera = batter_camera();
-        let mouse = Vec2::from(mouse_position());
         let size = vec2(screen_width(), screen_height());
         let ui = Ui::new(&font);
 
         if let Screen::Game(session) = &mut screen {
-            if focus.lost {
+            if input.lost {
                 session.pause();
             } else if is_key_pressed(KeyCode::Escape) {
                 if session.paused {
@@ -80,23 +111,23 @@ async fn main() {
                 }
             } else if !session.paused && session.play.can_swing() {
                 let aim = &mut session.play.aim;
-                if is_mouse_button_pressed(MouseButton::Left) {
-                    if !ui.pause_rect().contains(mouse) {
-                        aim.press();
-                    }
-                } else if size == previous_size {
-                    aim.drag(
-                        aim_movement(&camera, mouse - previous_mouse) * settings.sensitivity(),
-                    );
-                }
                 let at = session.play.time + dt;
-                if is_mouse_button_released(MouseButton::Left) && at < session.play.pitch.end_time()
-                {
-                    if aim.held {
-                        sounds.swing();
+                let dpi = screen_dpi_scale();
+                for action in &input.actions {
+                    match *action {
+                        BatInput::Press(p) if !ui.pause_rect().contains(p / dpi) => aim.press(),
+                        BatInput::Drag(delta) if size == previous_size => {
+                            aim.drag(aim_movement(&camera, delta / dpi) * settings.sensitivity());
+                        }
+                        BatInput::Release
+                            if at < session.play.pitch.end_time() && aim.release(at) =>
+                        {
+                            sounds.swing()
+                        }
+                        _ => {}
                     }
-                    aim.release(at);
-                } else if !is_mouse_button_down(MouseButton::Left) {
+                }
+                if !is_mouse_button_down(MouseButton::Left) {
                     aim.held = false;
                 }
             }
@@ -109,8 +140,8 @@ async fn main() {
                 screen = Screen::Summary(record);
             }
         }
-        focus.lost = false;
-        previous_mouse = mouse;
+        input.lost = false;
+        input.actions.clear();
         previous_size = size;
         show_mouse(!matches!(&screen, Screen::Game(run) if run.play.aim.held));
 
@@ -213,7 +244,7 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: bool) {
                 let p = project(camera, on_plate(play.pitch.crossing));
                 draw_circle(p.x, p.y, 4.5, GOLD);
             }
-            if let Some(swing) = play.aim.swing {
+            if let Some(swing) = play.aim.live_swing() {
                 let p = project(camera, on_plate(swing.aim));
                 draw_line(p.x - 7.0, p.y, p.x + 7.0, p.y, 2.0, AIM_GREEN);
                 draw_line(p.x, p.y - 7.0, p.x, p.y + 7.0, 2.0, AIM_GREEN);

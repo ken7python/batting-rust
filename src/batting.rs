@@ -54,7 +54,7 @@ pub fn in_zone(crossing: Vec2) -> bool {
 pub struct Aim {
     pub point: Vec2,
     pub held: bool,
-    pub swing: Option<Swing>,
+    pub last_swing: Option<Swing>,
 }
 
 impl Default for Aim {
@@ -62,14 +62,19 @@ impl Default for Aim {
         Self {
             point: CENTER,
             held: false,
-            swing: None,
+            last_swing: None,
         }
     }
 }
 
 impl Aim {
+    /// The pitch clock is zero when the ball leaves the pitcher's hand.
+    pub fn live_swing(&self) -> Option<Swing> {
+        self.last_swing.filter(|s| s.time >= 0.0)
+    }
+
     pub fn press(&mut self) {
-        self.held = self.swing.is_none();
+        self.held = self.live_swing().is_none();
     }
 
     pub fn drag(&mut self, movement: Vec2) {
@@ -79,19 +84,21 @@ impl Aim {
         }
     }
 
-    pub fn release(&mut self, time: f64) {
-        if self.held {
-            self.swing = Some(Swing {
-                time,
-                aim: self.point,
-            });
+    pub fn release(&mut self, time: f64) -> bool {
+        if !self.held {
+            return false;
         }
+        self.last_swing = Some(Swing {
+            time,
+            aim: self.point,
+        });
         self.held = false;
+        true
     }
 
     pub fn next_pitch(&mut self) {
         self.held = false;
-        self.swing = None;
+        self.last_swing = None;
     }
 }
 
@@ -109,11 +116,11 @@ mod tests {
         aim.press();
         aim.drag(vec2(-0.1, 0.0));
         aim.release(0.46);
-        assert_eq!(aim.swing.unwrap().time, 0.405);
-        assert_eq!(aim.swing.unwrap().aim, frozen);
+        assert_eq!(aim.live_swing().unwrap().time, 0.405);
+        assert_eq!(aim.live_swing().unwrap().aim, frozen);
         aim.next_pitch();
         aim.release(0.41);
-        assert!(aim.swing.is_none());
+        assert!(aim.last_swing.is_none());
         assert_eq!(aim.point, frozen);
     }
 
@@ -153,6 +160,6 @@ mod tests {
         aim.drag(vec2(-8.0, -8.0));
         assert!(aim.point.cmplt(ZONE_MIN).all());
         aim.release(0.4);
-        assert_eq!(aim.swing.unwrap().aim, aim.point);
+        assert_eq!(aim.live_swing().unwrap().aim, aim.point);
     }
 }

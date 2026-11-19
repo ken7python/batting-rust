@@ -238,12 +238,15 @@ pub fn ball(p: Vec3) {
 
 pub fn bat(time: f64, aim: &Aim) {
     let pivot = vec3(-0.77 + aim.point.x, aim.point.y - 0.15, 0.22);
-    let phase = aim
-        .swing
-        .map_or(0.0, |s| ((time - s.time) / 0.22).clamp(0.0, 1.0) as f32);
+    let elapsed = aim.last_swing.map_or(0.0, |s| (time - s.time).max(0.0));
+    let phase = if elapsed > 0.22 && aim.live_swing().is_none() {
+        (1.0 - (elapsed - 0.22) / 0.13).clamp(0.0, 1.0) as f32
+    } else {
+        (elapsed / 0.22).clamp(0.0, 1.0) as f32
+    };
     let theta = -1.38 + phase * 3.70;
     let direction = vec3(theta.cos(), 0.30 * (1.0 - phase * 1.5), -theta.sin());
-    if phase > 0.03 && phase < 0.89 {
+    if elapsed < 0.22 && phase > 0.03 && phase < 0.89 {
         for i in 0..5 {
             let angle = theta - i as f32 * 0.10;
             let end = pivot + vec3(angle.cos(), direction.y, -angle.sin()) * 0.88;

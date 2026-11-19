@@ -281,7 +281,15 @@ impl<'a> Ui<'a> {
                 CREAM,
             );
         } else if matches!(session.play.phase, Phase::Pitch) {
-            let hint = if session.play.aim.held {
+            let hint = if session.play.time < 0.0 {
+                if session.play.aim.held {
+                    "離して素振り"
+                } else {
+                    "投球前は何度でも素振り"
+                }
+            } else if session.play.aim.live_swing().is_some() {
+                "スイング済み"
+            } else if session.play.aim.held {
                 "離してスイング"
             } else {
                 "左ボタンを押してドラッグ"
