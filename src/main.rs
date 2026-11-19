@@ -168,6 +168,7 @@ async fn main() {
                         settings.delivery,
                         settings.speed,
                         settings.park,
+                        settings.pitch_mix,
                     ))
                 }
                 Action::Practice => {
@@ -176,6 +177,7 @@ async fn main() {
                         settings.delivery,
                         settings.speed,
                         settings.park,
+                        settings.pitch_mix,
                     ))
                 }
                 Action::Menu => screen = Screen::Menu,
@@ -185,7 +187,9 @@ async fn main() {
                 | Action::Sensitivity
                 | Action::Hand
                 | Action::Form
-                | Action::Park => settings.change(action),
+                | Action::Park
+                | Action::Repertoire
+                | Action::BreakSize => settings.change(action),
                 Action::Pause | Action::Resume => {
                     if let Screen::Game(run) = &mut screen {
                         if matches!(action, Action::Pause) {

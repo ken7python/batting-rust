@@ -1,6 +1,6 @@
 use crate::flight::Outcome;
 use crate::park::Park;
-use crate::pitch::{Delivery, Pitch, PitchKind, PitchSpeed};
+use crate::pitch::{Delivery, Pitch, PitchKind, PitchMix, PitchSpeed};
 use crate::play::{Phase, Play};
 
 pub const CHALLENGE_LENGTH: u32 = 10;
@@ -16,10 +16,16 @@ pub enum Mode {
 }
 
 impl Mode {
-    fn next_pitch(self, completed: u32, delivery: Delivery, speed: PitchSpeed) -> Pitch {
+    fn next_pitch(
+        self,
+        completed: u32,
+        delivery: Delivery,
+        speed: PitchSpeed,
+        mix: PitchMix,
+    ) -> Pitch {
         match self {
-            Self::Challenge => Pitch::random(None, completed < 2, speed, delivery),
-            Self::Practice { kind, .. } => Pitch::random(kind, false, speed, delivery),
+            Self::Challenge => Pitch::random(None, completed < 2, speed, delivery, mix),
+            Self::Practice { kind, .. } => Pitch::random(kind, false, speed, delivery, mix),
         }
     }
 
@@ -60,16 +66,24 @@ pub struct Session {
     pub record: Record,
     pub play: Play,
     pub paused: bool,
+    mix: PitchMix,
 }
 
 impl Session {
-    pub fn new(mode: Mode, delivery: Delivery, speed: PitchSpeed, park: Park) -> Self {
+    pub fn new(
+        mode: Mode,
+        delivery: Delivery,
+        speed: PitchSpeed,
+        park: Park,
+        mix: PitchMix,
+    ) -> Self {
         Self {
             mode,
             speed,
             record: Record::default(),
-            play: Play::new(mode.next_pitch(0, delivery, speed), park),
+            play: Play::new(mode.next_pitch(0, delivery, speed, mix), park),
             paused: false,
+            mix,
         }
     }
 
@@ -99,6 +113,7 @@ impl Session {
             self.record.completed,
             self.play.pitch.delivery,
             self.speed,
+            self.mix,
         ));
         None
     }
@@ -118,7 +133,13 @@ mod tests {
                 preview: false,
             },
         ] {
-            let mut run = Session::new(mode, Delivery::default(), PitchSpeed::Real, Park::Central);
+            let mut run = Session::new(
+                mode,
+                Delivery::default(),
+                PitchSpeed::Real,
+                Park::Central,
+                PitchMix::default(),
+            );
             for completed in 0..2 {
                 assert_eq!(run.record.completed, completed);
                 assert!((140.0..160.0).contains(&run.play.pitch.average_kmh()));
@@ -136,6 +157,7 @@ mod tests {
             Delivery::default(),
             PitchSpeed::Normal,
             Park::Central,
+            PitchMix::default(),
         );
         assert_eq!(run.play.pitch.kind, PitchKind::Fastball);
         let mut result = None;
@@ -168,6 +190,7 @@ mod tests {
             delivery,
             PitchSpeed::Slow,
             Park::Sunset,
+            PitchMix::default(),
         );
         run.play.aim.press();
         run.pause();

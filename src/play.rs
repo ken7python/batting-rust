@@ -107,7 +107,7 @@ impl Play {
 mod tests {
     use super::*;
     use crate::batting::{CENTER, SWING_LEAD};
-    use crate::pitch::{Delivery, PitchKind, PitchSpeed};
+    use crate::pitch::{BreakSize, Delivery, PitchKind, PitchSpeed};
 
     fn fastball() -> Play {
         Play::new(
@@ -117,6 +117,7 @@ mod tests {
                 CENTER,
                 PitchSpeed::Normal,
                 0.5,
+                BreakSize::Normal,
             ),
             Park::Central,
         )
