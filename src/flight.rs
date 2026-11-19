@@ -1,7 +1,7 @@
 use macroquad::prelude::*;
 
-use crate::batting::{BALL_RADIUS, Contact, Grade, MEET_RADIUS};
-use crate::defense::{Defense, FieldReturn, Fielder, RUNNER_TO_FIRST};
+use crate::batting::{BALL_RADIUS, Contact, Grade, HIT_TIMING, MEET_RADIUS};
+use crate::defense::{Defense, FIELDING_REACH, FieldReturn, Fielder, RUNNER_TO_FIRST};
 use crate::park::Park;
 
 pub const STEP: f64 = 1.0 / 120.0;
@@ -61,16 +61,16 @@ impl Flight {
         let strong = grade.contact == Contact::Barrel;
         let quality = (1.0
             - 0.65 * (grade.offset / MEET_RADIUS).length()
-            - 0.35 * (grade.timing.abs() as f32 / 0.065))
+            - 0.35 * (grade.timing.abs() / HIT_TIMING) as f32)
             .clamp(0.0, 1.0);
         let squared_quality = quality * quality;
         let speed = if strong {
             35.0 + 23.0 * squared_quality
         } else {
-            24.0 + 11.0 * squared_quality
+            26.0 + 10.0 * squared_quality
         };
         let horizontal =
-            (grade.timing as f32 / 0.065 * 1.05 + grade.offset.x * 0.48).clamp(-1.18, 1.18);
+            ((grade.timing / HIT_TIMING) as f32 * 1.05 + grade.offset.x * 0.48).clamp(-1.18, 1.18);
         let vertical = (0.43 - grade.offset.y * 3.1).clamp(-0.16, 0.83);
         Self {
             position: crossing.extend(0.0),
@@ -153,7 +153,7 @@ impl Flight {
                 self.position = crossing;
                 return Some(Outcome::Foul);
             }
-            if crossing.y >= fence_height {
+            if self.strong && crossing.y >= fence_height {
                 self.cleared_fence = true;
             } else {
                 let normal = vec3(crossing.x, 0.0, crossing.z).normalize();
@@ -172,7 +172,7 @@ impl Flight {
                 if !self.hit_wall
                     && self.velocity.y < 0.0
                     && (0.45..=2.35).contains(&reachable.y)
-                    && let Some(fielder) = self.defense.within_reach(reachable.xz(), 1.05)
+                    && let Some(fielder) = self.defense.within_reach(reachable.xz(), FIELDING_REACH)
                 {
                     self.position = reachable;
                     return Some(Outcome::FlyOut(fielder));
@@ -207,7 +207,10 @@ impl Flight {
         }
         self.defense
             .chase(self.position, self.velocity, self.elapsed, dt, true);
-        if let Some(fielder) = self.defense.within_reach(self.position.xz(), 1.05) {
+        if let Some(fielder) = self
+            .defense
+            .within_reach(self.position.xz(), FIELDING_REACH)
+        {
             self.defense.chasing = Some(fielder);
             self.returning = Some(FieldReturn::new(fielder, self.position, &self.defense));
             self.velocity = Vec3::ZERO;
@@ -285,13 +288,13 @@ mod tests {
     #[test]
     fn the_same_fly_ball_can_clear_sunset_but_hit_the_central_fence() {
         let grade = Grade {
-            contact: Contact::Touch,
+            contact: Contact::Barrel,
             timing: 0.0,
             offset: Vec2::ZERO,
         };
         for (park, expected) in [
             (Park::Sunset, Outcome::Homer),
-            (Park::Central, Outcome::Fair),
+            (Park::Central, Outcome::HardFair),
         ] {
             let mut flight = Flight::new(CENTER, grade, park);
             flight.position = vec3(0.0, 2.8, -76.5);
@@ -302,14 +305,15 @@ mod tests {
     }
 
     #[test]
-    fn glancing_and_late_hits_stay_in_both_parks_but_centered_contact_clears_them() {
+    fn both_parks_require_precise_timing_and_aim_for_a_home_run() {
         use crate::batting::{SWING_LEAD, Swing, grade};
         let arrival = 0.48;
         for park in [Park::Central, Park::Sunset] {
-            for (timing, offset) in [
-                (0.0, vec2(0.03, -0.10)),
-                (0.04, Vec2::ZERO),
-                (0.0, Vec2::ZERO),
+            for (timing, offset, expected_contact) in [
+                (0.016, Vec2::ZERO, Contact::Touch),
+                (0.0, vec2(0.050, 0.0), Contact::Touch),
+                (0.0, vec2(0.03, -0.10), Contact::Touch),
+                (0.0, Vec2::ZERO, Contact::Barrel),
             ] {
                 let hit = grade(
                     Swing {
@@ -320,15 +324,15 @@ mod tests {
                     CENTER,
                 );
                 let (outcome, end) = simulate(1.0 / 60.0, hit, park);
-                if hit.contact == Contact::Barrel {
+                assert_eq!(hit.contact, expected_contact);
+                if expected_contact == Contact::Barrel {
                     assert_eq!(outcome, Outcome::Homer);
                 } else {
-                    assert_eq!(hit.contact, Contact::Touch);
                     assert!(matches!(
                         outcome,
                         Outcome::Fair | Outcome::FlyOut(_) | Outcome::GroundOut(_)
                     ));
-                    assert!(end.xz().length() < park.fence().0 - 5.0);
+                    assert!(end.xz().length() <= park.fence().0 + 1e-4);
                 }
             }
         }
@@ -454,7 +458,7 @@ mod tests {
     fn an_early_glancing_swing_can_go_foul() {
         let early = Grade {
             contact: Contact::Touch,
-            timing: -0.064,
+            timing: -0.079,
             offset: Vec2::ZERO,
         };
         let (result, point) = simulate(1.0 / 60.0, early, Park::Central);
