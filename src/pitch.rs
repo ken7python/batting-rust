@@ -23,11 +23,11 @@ impl PitchKind {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Fastball => "Fastball",
-            Self::Slider => "Slider",
-            Self::Curve => "Curveball",
-            Self::Forkball => "Forkball",
-            Self::Changeup => "Changeup",
+            Self::Fastball => "ストレート",
+            Self::Slider => "スライダー",
+            Self::Curve => "カーブ",
+            Self::Forkball => "フォーク",
+            Self::Changeup => "チェンジアップ",
         }
     }
 

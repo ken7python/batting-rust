@@ -19,13 +19,13 @@ pub enum Outcome {
 impl Outcome {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Homer => "Home run",
-            Self::HardFair => "Hard fair ball",
-            Self::Fair => "Fair ball",
-            Self::Foul => "Foul",
-            Self::Whiff => "Swing and miss",
-            Self::Strike => "Called strike",
-            Self::Ball => "Ball",
+            Self::Homer => "ホームラン",
+            Self::HardFair => "強いフェア打球",
+            Self::Fair => "フェア打球",
+            Self::Foul => "ファウル",
+            Self::Whiff => "空振り",
+            Self::Strike => "見送りストライク",
+            Self::Ball => "見送りボール",
         }
     }
 }
