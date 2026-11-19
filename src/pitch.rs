@@ -322,6 +322,10 @@ impl Pitch {
         f64::from(self.delivery.release().z.abs()) / self.duration * 3.6
     }
 
+    pub fn preview_point(self) -> Vec3 {
+        self.position(self.bounce_time.unwrap_or(self.duration))
+    }
+
     pub fn position(self, elapsed: f64) -> Vec3 {
         let u = (elapsed / self.duration).max(0.0) as f32;
         let (_, arc, late_break) = self.kind.profile();
@@ -504,6 +508,7 @@ mod tests {
         );
         assert!(pitch.end_time() < pitch.duration);
         let bounce = pitch.position(pitch.end_time());
+        assert_eq!(pitch.preview_point(), bounce);
         assert!((bounce.y - BALL_RADIUS).abs() < 1e-5 && bounce.z < 0.0);
     }
 

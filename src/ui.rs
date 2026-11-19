@@ -63,7 +63,6 @@ impl Settings {
     pub fn practice(&self) -> Mode {
         Mode::Practice {
             kind: self.selected_pitch(),
-            preview: self.preview,
         }
     }
 
