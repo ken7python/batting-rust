@@ -1,7 +1,7 @@
 use macroquad::prelude::*;
 
 use crate::batting::{Grade, MEET_RADIUS};
-use crate::pitch::{PitchKind, PitchSpeed, ThrowingHand};
+use crate::pitch::{Delivery, PitchForm, PitchKind, PitchSpeed, ThrowingHand};
 use crate::play::{Phase, ResultCard};
 use crate::session::{CHALLENGE_LENGTH, Mode, Record, Session};
 
@@ -21,6 +21,7 @@ pub enum Action {
     Preview,
     Sensitivity,
     Hand,
+    Form,
     Pause,
     Resume,
     Menu,
@@ -31,7 +32,7 @@ pub struct Settings {
     pub speed: PitchSpeed,
     pub preview: bool,
     sensitivity: usize,
-    pub hand: ThrowingHand,
+    pub delivery: Delivery,
 }
 
 impl Default for Settings {
@@ -41,7 +42,7 @@ impl Default for Settings {
             speed: PitchSpeed::default(),
             preview: false,
             sensitivity: 1,
-            hand: ThrowingHand::Right,
+            delivery: Delivery::default(),
         }
     }
 }
@@ -69,11 +70,17 @@ impl Settings {
             Action::Preview => self.preview = !self.preview,
             Action::Sensitivity => self.sensitivity = (self.sensitivity + 1) % 3,
             Action::Hand => {
-                self.hand = if self.hand == ThrowingHand::Right {
+                self.delivery.hand = if self.delivery.hand == ThrowingHand::Right {
                     ThrowingHand::Left
                 } else {
                     ThrowingHand::Right
                 }
+            }
+            Action::Form => {
+                self.delivery.form = match self.delivery.form {
+                    PitchForm::Overhand => PitchForm::Sidearm,
+                    PitchForm::Sidearm => PitchForm::Overhand,
+                };
             }
             _ => {}
         }
@@ -143,10 +150,10 @@ impl<'a> Ui<'a> {
     pub fn menu(&self, settings: &Settings) -> Option<Action> {
         let s = self.scale;
         let x = 28.0 * s;
-        let y = (screen_height() - 552.0 * s) * 0.5;
+        let y = (screen_height() - 608.0 * s) * 0.5;
         let w = 436.0 * s;
         let rect = |x0, y0, width, height| Rect::new(x + x0 * s, y + y0 * s, width * s, height * s);
-        self.panel(Rect::new(x, y, w, 552.0 * s));
+        self.panel(Rect::new(x, y, w, 608.0 * s));
         draw_rectangle(x, y, w, 4.0 * s, AMBER);
         self.text("3D BASEBALL", x + 24.0 * s, y + 43.0 * s, 16.0, AMBER);
         self.text("BATTING CLUB", x + 22.0 * s, y + 97.0 * s, 47.0, CREAM);
@@ -192,13 +199,18 @@ impl<'a> Ui<'a> {
         );
         let hand = self.button(
             rect(224.0, 443.0, 188.0, 44.0),
-            settings.hand.label(),
+            settings.delivery.hand.label(),
+            false,
+        );
+        let form = self.button(
+            rect(24.0, 500.0, 188.0, 44.0),
+            settings.delivery.form.label(),
             false,
         );
         self.text(
             "操作  左ボタンを押したままマウスを動かす",
             x + 24.0 * s,
-            y + 528.0 * s,
+            y + 584.0 * s,
             16.0,
             MUTED,
         );
@@ -209,6 +221,7 @@ impl<'a> Ui<'a> {
             (preview, Action::Preview),
             (sensitivity, Action::Sensitivity),
             (hand, Action::Hand),
+            (form, Action::Form),
         ]
         .into_iter()
         .find_map(|(hit, action)| hit.then_some(action))

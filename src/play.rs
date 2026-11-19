@@ -104,12 +104,12 @@ impl Play {
 mod tests {
     use super::*;
     use crate::batting::{CENTER, SWING_LEAD};
-    use crate::pitch::{PitchKind, PitchSpeed, ThrowingHand};
+    use crate::pitch::{Delivery, PitchKind, PitchSpeed};
 
     fn fastball() -> Play {
         Play::new(Pitch::new(
             PitchKind::Fastball,
-            ThrowingHand::Right,
+            Delivery::default(),
             CENTER,
             PitchSpeed::Normal,
             0.5,

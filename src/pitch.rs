@@ -45,16 +45,44 @@ impl ThrowingHand {
         if self == Self::Right { 1.0 } else { -1.0 }
     }
 
-    pub fn release(self) -> Vec3 {
-        vec3(0.40 * self.sign(), 1.91, -16.25)
-    }
-
     pub fn label(self) -> &'static str {
         if self == Self::Right {
             "右投手"
         } else {
             "左投手"
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PitchForm {
+    #[default]
+    Overhand,
+    Sidearm,
+}
+
+impl PitchForm {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Overhand => "上手投げ",
+            Self::Sidearm => "横手投げ",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Delivery {
+    pub hand: ThrowingHand,
+    pub form: PitchForm,
+}
+
+impl Delivery {
+    pub fn release(self) -> Vec3 {
+        let (reach, height) = match self.form {
+            PitchForm::Overhand => (0.40, 1.91),
+            PitchForm::Sidearm => (0.81, 1.30),
+        };
+        vec3(reach * self.hand.sign(), height, -16.25)
     }
 }
 
@@ -124,7 +152,7 @@ impl PitchKind {
 #[derive(Clone, Copy)]
 pub struct Pitch {
     pub kind: PitchKind,
-    pub hand: ThrowingHand,
+    pub delivery: Delivery,
     pub crossing: Vec2,
     pub duration: f64,
     pub bounce_time: Option<f64>,
@@ -134,7 +162,7 @@ pub struct Pitch {
 impl Pitch {
     pub fn new(
         kind: PitchKind,
-        hand: ThrowingHand,
+        delivery: Delivery,
         crossing: Vec2,
         speed: PitchSpeed,
         sample: f32,
@@ -142,7 +170,7 @@ impl Pitch {
         let ((min, max), _, _) = kind.profile();
         let mut pitch = Self {
             kind,
-            hand,
+            delivery,
             crossing,
             duration: f64::from(min + (max - min) * sample) / speed.multiplier(),
             bounce_time: None,
@@ -167,7 +195,7 @@ impl Pitch {
         fixed: Option<PitchKind>,
         opening: bool,
         speed: PitchSpeed,
-        hand: ThrowingHand,
+        delivery: Delivery,
     ) -> Self {
         let kind = if opening {
             PitchKind::Fastball
@@ -194,7 +222,7 @@ impl Pitch {
                 _ => vec2(rand::gen_range(-0.31, 0.31), rand::gen_range(0.16, 0.44)),
             }
         };
-        Self::new(kind, hand, crossing, speed, rand::gen_range(0.0, 1.0))
+        Self::new(kind, delivery, crossing, speed, rand::gen_range(0.0, 1.0))
     }
 
     pub fn end_time(self) -> f64 {
@@ -202,7 +230,7 @@ impl Pitch {
     }
 
     pub fn average_kmh(self) -> f64 {
-        f64::from(self.hand.release().z.abs()) / self.duration * 3.6
+        f64::from(self.delivery.release().z.abs()) / self.duration * 3.6
     }
 
     pub fn position(self, elapsed: f64) -> Vec3 {
@@ -215,8 +243,8 @@ impl Pitch {
                 let phase = self.wobble_phase + t * 19.0;
                 movement += vec2(phase.sin() * 0.22, (phase * 0.74).cos() * 0.11) * (4.0 * taper);
             }
-            movement.x *= self.hand.sign();
-            self.hand.release().lerp(self.crossing.extend(0.0), t) + movement.extend(0.0)
+            movement.x *= self.delivery.hand.sign();
+            self.delivery.release().lerp(self.crossing.extend(0.0), t) + movement.extend(0.0)
         };
         if u <= 1.0 {
             shape(u)
@@ -237,7 +265,7 @@ mod tests {
     fn faster_presets_shorten_every_pitch_without_moving_its_break() {
         for kind in PitchKind::ALL {
             let pitches = PitchSpeed::ALL
-                .map(|speed| Pitch::new(kind, ThrowingHand::Right, CENTER, speed, 0.5));
+                .map(|speed| Pitch::new(kind, Delivery::default(), CENTER, speed, 0.5));
             for pair in pitches.windows(2) {
                 assert!(pair[0].duration > pair[1].duration);
                 assert!(
@@ -249,7 +277,10 @@ mod tests {
         }
         let real = Pitch::new(
             PitchKind::Fastball,
-            ThrowingHand::Left,
+            Delivery {
+                hand: ThrowingHand::Left,
+                ..Default::default()
+            },
             CENTER,
             PitchSpeed::Real,
             0.5,
@@ -261,8 +292,8 @@ mod tests {
     fn each_pitch_releases_from_the_hand_and_crosses_the_selected_target() {
         let target = vec2(-0.12, 0.73);
         for kind in PitchKind::ALL {
-            let pitch = Pitch::new(kind, ThrowingHand::Right, target, PitchSpeed::Normal, 0.5);
-            assert_eq!(pitch.position(0.0), ThrowingHand::Right.release());
+            let pitch = Pitch::new(kind, Delivery::default(), target, PitchSpeed::Normal, 0.5);
+            assert_eq!(pitch.position(0.0), Delivery::default().release());
             assert!(
                 pitch
                     .position(pitch.duration)
@@ -271,14 +302,14 @@ mod tests {
         }
         let fastball = Pitch::new(
             PitchKind::Fastball,
-            ThrowingHand::Right,
+            Delivery::default(),
             target,
             PitchSpeed::Normal,
             0.5,
         );
         let curve = Pitch::new(
             PitchKind::Curve,
-            ThrowingHand::Right,
+            Delivery::default(),
             target,
             PitchSpeed::Normal,
             0.5,
@@ -294,7 +325,7 @@ mod tests {
     fn a_forkball_in_the_dirt_ends_before_the_plate() {
         let pitch = Pitch::new(
             PitchKind::Forkball,
-            ThrowingHand::Right,
+            Delivery::default(),
             vec2(0.0, -0.3),
             PitchSpeed::Normal,
             0.5,
@@ -305,10 +336,42 @@ mod tests {
     }
 
     #[test]
+    fn sidearm_has_a_lower_wider_release_for_both_hands() {
+        for hand in [ThrowingHand::Right, ThrowingHand::Left] {
+            let sidearm = Delivery {
+                hand,
+                form: PitchForm::Sidearm,
+            };
+            let overhand = Delivery {
+                hand,
+                form: PitchForm::Overhand,
+            };
+            let pitch = Pitch::new(PitchKind::Slider, sidearm, CENTER, PitchSpeed::Normal, 0.5);
+            let release = pitch.position(0.0);
+            assert!(release.y < overhand.release().y);
+            assert!(release.x * hand.sign() > overhand.release().x * hand.sign());
+            assert!(
+                pitch
+                    .position(pitch.duration)
+                    .abs_diff_eq(CENTER.extend(0.0), 1e-5)
+            );
+        }
+    }
+
+    #[test]
     fn switching_pitcher_hands_mirrors_the_break() {
         for kind in PitchKind::ALL {
-            let right = Pitch::new(kind, ThrowingHand::Right, CENTER, PitchSpeed::Normal, 0.4);
-            let left = Pitch::new(kind, ThrowingHand::Left, CENTER, PitchSpeed::Normal, 0.4);
+            let right = Pitch::new(kind, Delivery::default(), CENTER, PitchSpeed::Normal, 0.4);
+            let left = Pitch::new(
+                kind,
+                Delivery {
+                    hand: ThrowingHand::Left,
+                    ..Default::default()
+                },
+                CENTER,
+                PitchSpeed::Normal,
+                0.4,
+            );
             let a = right.position(right.duration * 0.73);
             let b = left.position(left.duration * 0.73);
             assert!(a.abs_diff_eq(vec3(-b.x, b.y, b.z), 1e-5));
