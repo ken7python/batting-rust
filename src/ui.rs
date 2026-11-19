@@ -1,7 +1,7 @@
 use macroquad::prelude::*;
 
 use crate::batting::{Grade, MEET_RADIUS};
-use crate::pitch::{PitchKind, ThrowingHand};
+use crate::pitch::{PitchKind, PitchSpeed, ThrowingHand};
 use crate::play::{Phase, ResultCard};
 use crate::session::{CHALLENGE_LENGTH, Mode, Record, Session};
 
@@ -17,7 +17,7 @@ pub enum Action {
     Challenge,
     Practice,
     Pitch,
-    Speed,
+    Speed(PitchSpeed),
     Preview,
     Sensitivity,
     Hand,
@@ -28,7 +28,7 @@ pub enum Action {
 
 pub struct Settings {
     pitch: usize,
-    pub slow: bool,
+    pub speed: PitchSpeed,
     pub preview: bool,
     sensitivity: usize,
     pub hand: ThrowingHand,
@@ -38,7 +38,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             pitch: 0,
-            slow: false,
+            speed: PitchSpeed::default(),
             preview: false,
             sensitivity: 1,
             hand: ThrowingHand::Right,
@@ -54,7 +54,6 @@ impl Settings {
     pub fn practice(&self) -> Mode {
         Mode::Practice {
             kind: self.selected_pitch(),
-            slow: self.slow,
             preview: self.preview,
         }
     }
@@ -66,7 +65,7 @@ impl Settings {
     pub fn change(&mut self, action: Action) {
         match action {
             Action::Pitch => self.pitch = (self.pitch + 1) % (PitchKind::ALL.len() + 1),
-            Action::Speed => self.slow = !self.slow,
+            Action::Speed(speed) => self.speed = speed,
             Action::Preview => self.preview = !self.preview,
             Action::Sensitivity => self.sensitivity = (self.sensitivity + 1) % 3,
             Action::Hand => {
@@ -144,10 +143,10 @@ impl<'a> Ui<'a> {
     pub fn menu(&self, settings: &Settings) -> Option<Action> {
         let s = self.scale;
         let x = 28.0 * s;
-        let y = (screen_height() - 512.0 * s) * 0.5;
+        let y = (screen_height() - 552.0 * s) * 0.5;
         let w = 436.0 * s;
         let rect = |x0, y0, width, height| Rect::new(x + x0 * s, y + y0 * s, width * s, height * s);
-        self.panel(Rect::new(x, y, w, 512.0 * s));
+        self.panel(Rect::new(x, y, w, 552.0 * s));
         draw_rectangle(x, y, w, 4.0 * s, AMBER);
         self.text("3D BASEBALL", x + 24.0 * s, y + 43.0 * s, 16.0, AMBER);
         self.text("BATTING CLUB", x + 22.0 * s, y + 97.0 * s, 47.0, CREAM);
@@ -160,25 +159,24 @@ impl<'a> Ui<'a> {
         );
         let challenge = self.button(rect(24.0, 163.0, 388.0, 51.0), "10球チャレンジ", true);
         let practice = self.button(rect(24.0, 229.0, 388.0, 51.0), "練習を始める", false);
+        self.text("球速", x + 24.0 * s, y + 313.0 * s, 18.0, MUTED);
+        let mut speed_choice = None;
+        for (index, speed) in PitchSpeed::ALL.into_iter().enumerate() {
+            let bounds = rect(24.0 + index as f32 * 99.0, 324.0, 91.0, 44.0);
+            if self.button(bounds, speed.label(), speed == settings.speed) {
+                speed_choice = Some(Action::Speed(speed));
+            }
+        }
         let pitch_label = settings
             .selected_pitch()
             .map_or("ランダム", PitchKind::label);
         let pitch = self.button(
-            rect(24.0, 300.0, 388.0, 44.0),
+            rect(24.0, 383.0, 238.0, 44.0),
             &format!("球種  {pitch_label}"),
             false,
         );
-        let speed = self.button(
-            rect(24.0, 355.0, 188.0, 44.0),
-            if settings.slow {
-                "速度  ゆっくり"
-            } else {
-                "速度  標準"
-            },
-            false,
-        );
         let preview = self.button(
-            rect(224.0, 355.0, 188.0, 44.0),
+            rect(270.0, 383.0, 142.0, 44.0),
             if settings.preview {
                 "予告  あり"
             } else {
@@ -188,19 +186,19 @@ impl<'a> Ui<'a> {
         );
         let sensitivity_label = ["低い", "標準", "高い"][settings.sensitivity];
         let sensitivity = self.button(
-            rect(24.0, 420.0, 188.0, 44.0),
+            rect(24.0, 443.0, 188.0, 44.0),
             &format!("感度  {sensitivity_label}"),
             false,
         );
         let hand = self.button(
-            rect(224.0, 420.0, 188.0, 44.0),
+            rect(224.0, 443.0, 188.0, 44.0),
             settings.hand.label(),
             false,
         );
         self.text(
             "操作  左ボタンを押したままマウスを動かす",
             x + 24.0 * s,
-            y + 490.0 * s,
+            y + 528.0 * s,
             16.0,
             MUTED,
         );
@@ -208,13 +206,13 @@ impl<'a> Ui<'a> {
             (challenge, Action::Challenge),
             (practice, Action::Practice),
             (pitch, Action::Pitch),
-            (speed, Action::Speed),
             (preview, Action::Preview),
             (sensitivity, Action::Sensitivity),
             (hand, Action::Hand),
         ]
         .into_iter()
         .find_map(|(hit, action)| hit.then_some(action))
+        .or(speed_choice)
     }
 
     pub fn pause_rect(&self) -> Rect {
@@ -238,6 +236,13 @@ impl<'a> Ui<'a> {
         };
         self.panel(Rect::new(x, y, 288.0 * s, 81.0 * s));
         self.text(mode, x + 14.0 * s, y + 25.0 * s, 16.0, MUTED);
+        self.text(
+            &format!("球速  {}", session.speed.label()),
+            x + 154.0 * s,
+            y + 25.0 * s,
+            16.0,
+            MUTED,
+        );
         self.text(&count, x + 14.0 * s, y + 62.0 * s, 27.0, CREAM);
         if matches!(session.mode, Mode::Challenge) {
             self.text(
@@ -331,7 +336,10 @@ impl<'a> Ui<'a> {
             .landing
             .map_or_else(String::new, |p| format!("   {:.0} m", p.xz().length()));
         self.text(
-            &format!("{pitch}{location}"),
+            &format!(
+                "{pitch}  {:.0} km/h{location}",
+                session.play.pitch.average_kmh()
+            ),
             x + 15.0 * s,
             y + 26.0 * s,
             17.0,

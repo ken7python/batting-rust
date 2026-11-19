@@ -133,14 +133,19 @@ async fn main() {
         if let Some(action) = action {
             match action {
                 Action::Challenge => {
-                    screen = Screen::Game(Session::new(Mode::Challenge, settings.hand))
+                    screen =
+                        Screen::Game(Session::new(Mode::Challenge, settings.hand, settings.speed))
                 }
                 Action::Practice => {
-                    screen = Screen::Game(Session::new(settings.practice(), settings.hand))
+                    screen = Screen::Game(Session::new(
+                        settings.practice(),
+                        settings.hand,
+                        settings.speed,
+                    ))
                 }
                 Action::Menu => screen = Screen::Menu,
                 Action::Pitch
-                | Action::Speed
+                | Action::Speed(_)
                 | Action::Preview
                 | Action::Sensitivity
                 | Action::Hand => settings.change(action),

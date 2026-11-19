@@ -1,5 +1,5 @@
 use crate::flight::Outcome;
-use crate::pitch::{Pitch, PitchKind, ThrowingHand};
+use crate::pitch::{Pitch, PitchKind, PitchSpeed, ThrowingHand};
 use crate::play::{Phase, Play};
 
 pub const CHALLENGE_LENGTH: u32 = 10;
@@ -10,18 +10,15 @@ pub enum Mode {
     Challenge,
     Practice {
         kind: Option<PitchKind>,
-        slow: bool,
         preview: bool,
     },
 }
 
 impl Mode {
-    pub fn next_pitch(self, completed: u32, hand: ThrowingHand) -> Pitch {
+    fn next_pitch(self, completed: u32, hand: ThrowingHand, speed: PitchSpeed) -> Pitch {
         match self {
-            Self::Challenge => Pitch::random(None, completed < 2, 1.0, hand),
-            Self::Practice { kind, slow, .. } => {
-                Pitch::random(kind, false, if slow { 0.65 } else { 1.0 }, hand)
-            }
+            Self::Challenge => Pitch::random(None, completed < 2, speed, hand),
+            Self::Practice { kind, .. } => Pitch::random(kind, false, speed, hand),
         }
     }
 
@@ -58,17 +55,19 @@ impl Record {
 
 pub struct Session {
     pub mode: Mode,
+    pub speed: PitchSpeed,
     pub record: Record,
     pub play: Play,
     pub paused: bool,
 }
 
 impl Session {
-    pub fn new(mode: Mode, hand: ThrowingHand) -> Self {
+    pub fn new(mode: Mode, hand: ThrowingHand, speed: PitchSpeed) -> Self {
         Self {
             mode,
+            speed,
             record: Record::default(),
-            play: Play::new(mode.next_pitch(0, hand)),
+            play: Play::new(mode.next_pitch(0, hand, speed)),
             paused: false,
         }
     }
@@ -95,10 +94,11 @@ impl Session {
         if matches!(self.mode, Mode::Challenge) && self.record.completed >= CHALLENGE_LENGTH {
             return Some(self.record);
         }
-        self.play.next_pitch(
-            self.mode
-                .next_pitch(self.record.completed, self.play.pitch.hand),
-        );
+        self.play.next_pitch(self.mode.next_pitch(
+            self.record.completed,
+            self.play.pitch.hand,
+            self.speed,
+        ));
         None
     }
 }
@@ -108,8 +108,28 @@ mod tests {
     use super::*;
 
     #[test]
+    fn both_modes_keep_real_speed_for_the_first_and_next_pitch() {
+        for mode in [
+            Mode::Challenge,
+            Mode::Practice {
+                kind: Some(PitchKind::Fastball),
+                preview: false,
+            },
+        ] {
+            let mut run = Session::new(mode, ThrowingHand::Right, PitchSpeed::Real);
+            for completed in 0..2 {
+                assert_eq!(run.record.completed, completed);
+                assert!((140.0..160.0).contains(&run.play.pitch.average_kmh()));
+                // Take the pitch and wait through its result to reach the next delivery.
+                run.tick(crate::batting::WINDUP + run.play.pitch.end_time() + 0.01);
+                run.tick(RESULT_SECONDS + 0.01);
+            }
+        }
+    }
+
+    #[test]
     fn ten_pitch_round_records_each_pitch_once_including_takes() {
-        let mut run = Session::new(Mode::Challenge, ThrowingHand::Right);
+        let mut run = Session::new(Mode::Challenge, ThrowingHand::Right, PitchSpeed::Normal);
         assert_eq!(run.play.pitch.kind, PitchKind::Fastball);
         let mut result = None;
         for _ in 0..4000 {
@@ -132,10 +152,10 @@ mod tests {
         let mut run = Session::new(
             Mode::Practice {
                 kind: Some(PitchKind::Curve),
-                slow: true,
                 preview: true,
             },
             ThrowingHand::Left,
+            PitchSpeed::Slow,
         );
         run.play.aim.press();
         run.pause();
