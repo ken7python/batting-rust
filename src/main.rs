@@ -3,13 +3,37 @@ mod flight;
 mod pitch;
 mod play;
 mod scene;
+mod session;
+mod ui;
 
+use macroquad::input::utils::{register_input_subscriber, repeat_all_miniquad_input};
+use macroquad::miniquad::EventHandler;
 use macroquad::prelude::*;
-use pitch::Pitch;
 use play::{Phase, Play};
 use scene::*;
+use session::{Mode, Record, Session};
+use ui::{Action, Settings, Ui};
 
 const SKY: Color = Color::from_rgba(147, 198, 218, 255);
+
+enum Screen {
+    Menu,
+    Game(Session),
+    Summary(Record),
+}
+
+#[derive(Default)]
+struct Focus {
+    lost: bool,
+}
+
+impl EventHandler for Focus {
+    fn update(&mut self) {}
+    fn draw(&mut self) {}
+    fn window_minimized_event(&mut self) {
+        self.lost = true;
+    }
+}
 
 fn window_conf() -> Conf {
     Conf {
@@ -24,61 +48,107 @@ fn window_conf() -> Conf {
 
 #[macroquad::main(window_conf)]
 async fn main() {
-    let mut play = Play::new(Pitch::random(None, true, 1.0));
+    let font = load_ttf_font_from_bytes(include_bytes!("../assets/BattingSans.ttf"))
+        .expect("bundled UI font must be a valid TTF");
+    let mut screen = Screen::Menu;
+    let mut settings = Settings::default();
+    let subscriber = register_input_subscriber();
+    let mut focus = Focus::default();
     let mut previous_mouse = Vec2::from(mouse_position());
     let mut previous_size = Vec2::ZERO;
 
     loop {
-        let dt = f64::from(get_frame_time().min(0.05));
+        repeat_all_miniquad_input(&mut focus, subscriber);
+        let dt = f64::from(get_frame_time().min(0.1));
         let camera = batter_camera();
         let mouse = Vec2::from(mouse_position());
         let size = vec2(screen_width(), screen_height());
-        if play.can_swing() {
-            if is_mouse_button_pressed(MouseButton::Left) {
-                play.aim.press();
-            } else if size == previous_size {
-                play.aim.drag(aim_movement(&camera, mouse - previous_mouse));
+        let ui = Ui::new(&font);
+
+        if let Screen::Game(session) = &mut screen {
+            if focus.lost {
+                session.pause();
+            } else if is_key_pressed(KeyCode::Escape) {
+                if session.paused {
+                    session.paused = false;
+                } else {
+                    session.pause();
+                }
+            } else if !session.paused && session.play.can_swing() {
+                let aim = &mut session.play.aim;
+                if is_mouse_button_pressed(MouseButton::Left) {
+                    if !ui.pause_rect().contains(mouse) {
+                        aim.press();
+                    }
+                } else if size == previous_size {
+                    aim.drag(
+                        aim_movement(&camera, mouse - previous_mouse) * settings.sensitivity(),
+                    );
+                }
+                let at = session.play.time + dt;
+                if is_mouse_button_released(MouseButton::Left) && at < session.play.pitch.end_time()
+                {
+                    aim.release(at);
+                } else if !is_mouse_button_down(MouseButton::Left) {
+                    aim.held = false;
+                }
             }
-            if is_mouse_button_released(MouseButton::Left) && play.time + dt < play.pitch.end_time()
-            {
-                play.aim.release(play.time + dt);
-            } else if !is_mouse_button_down(MouseButton::Left) {
-                play.aim.held = false;
+            if let Some(record) = session.tick(dt) {
+                screen = Screen::Summary(record);
             }
         }
+        focus.lost = false;
         previous_mouse = mouse;
         previous_size = size;
-        play.advance(dt);
-        if play.result_time > 1.25 {
-            play.next_pitch(Pitch::random(None, false, 1.0));
-        }
+        show_mouse(!matches!(&screen, Screen::Game(run) if run.play.aim.held));
 
-        draw_play(&play, &camera);
-        draw_text("BATTING CLUB  /  PITCH DRILL", 28.0, 48.0, 25.0, DARKBLUE);
-        draw_text(
-            "Hold + drag to aim. Release to swing.",
-            28.0,
-            screen_height() - 26.0,
-            22.0,
-            WHITE,
-        );
-        if let Phase::Result(result) = &play.phase {
-            let label = format!("{}  /  {}", play.pitch.kind.label(), result.outcome.label());
-            let width = measure_text(&label, None, 28, 1.0).width;
-            draw_text(
-                &label,
-                (screen_width() - width) * 0.5,
-                screen_height() * 0.75,
-                28.0,
-                WHITE,
-            );
+        clear_background(SKY);
+        let action = match &screen {
+            Screen::Menu => {
+                draw_idle(&camera);
+                ui.menu(&settings)
+            }
+            Screen::Game(run) => {
+                draw_play(&run.play, &camera, run.mode.preview());
+                ui.game(run)
+            }
+            Screen::Summary(record) => {
+                draw_idle(&camera);
+                ui.summary(*record)
+            }
+        };
+
+        if let Some(action) = action {
+            match action {
+                Action::Challenge => screen = Screen::Game(Session::new(Mode::Challenge)),
+                Action::Practice => screen = Screen::Game(Session::new(settings.practice())),
+                Action::Menu => screen = Screen::Menu,
+                Action::Pitch | Action::Speed | Action::Preview | Action::Sensitivity => {
+                    settings.change(action)
+                }
+                Action::Pause | Action::Resume => {
+                    if let Screen::Game(run) = &mut screen {
+                        if matches!(action, Action::Pause) {
+                            run.pause();
+                        } else {
+                            run.paused = false;
+                        }
+                    }
+                }
+            }
         }
         next_frame().await;
     }
 }
 
-fn draw_play(play: &Play, camera: &Camera3D) {
-    clear_background(SKY);
+fn draw_idle(camera: &Camera3D) {
+    set_camera(camera);
+    field();
+    pitcher(-batting::WINDUP);
+    set_default_camera();
+}
+
+fn draw_play(play: &Play, camera: &Camera3D, preview: bool) {
     match &play.phase {
         Phase::Flight(flight) => {
             let follow = flight_camera(flight.position, flight.velocity, flight.elapsed);
@@ -98,8 +168,14 @@ fn draw_play(play: &Play, camera: &Camera3D) {
     }
     set_default_camera();
     match &play.phase {
-        Phase::Pitch => reticle(camera, &play.aim),
-        Phase::Result(card) => {
+        Phase::Pitch => {
+            if preview && play.pitch.bounce_time.is_none() {
+                let p = project(camera, on_plate(play.pitch.crossing));
+                draw_circle_lines(p.x, p.y, 7.0, 1.5, SKYBLUE);
+            }
+            reticle(camera, &play.aim);
+        }
+        Phase::Result(_) => {
             if play.pitch.bounce_time.is_none() {
                 let p = project(camera, on_plate(play.pitch.crossing));
                 draw_circle(p.x, p.y, 4.5, GOLD);
@@ -108,21 +184,6 @@ fn draw_play(play: &Play, camera: &Camera3D) {
                 let p = project(camera, on_plate(swing.aim));
                 draw_line(p.x - 7.0, p.y, p.x + 7.0, p.y, 2.0, WHITE);
                 draw_line(p.x, p.y - 7.0, p.x, p.y + 7.0, 2.0, WHITE);
-            }
-            if let (Some(grade), Some(swing)) = (card.grade, play.aim.swing) {
-                let target = project(camera, on_plate(swing.aim - grade.offset));
-                let text = format!("{:+.0} ms", grade.timing * 1000.0);
-                draw_text(&text, target.x + 15.0, target.y - 12.0, 20.0, WHITE);
-            }
-            if let Some(point) = card.landing {
-                let text = format!("{:.0} m", point.xz().length());
-                draw_text(
-                    &text,
-                    screen_width() * 0.5 - 15.0,
-                    screen_height() * 0.82,
-                    22.0,
-                    WHITE,
-                );
             }
         }
         Phase::Flight(_) => {}
