@@ -26,6 +26,8 @@ pub enum Action {
     Park,
     Repertoire,
     BreakSize,
+    Music,
+    Effects,
     Pause,
     Resume,
     Menu,
@@ -39,6 +41,8 @@ pub struct Settings {
     pub delivery: Delivery,
     pub park: Park,
     pub pitch_mix: PitchMix,
+    pub music: bool,
+    pub effects: bool,
 }
 
 impl Default for Settings {
@@ -51,6 +55,8 @@ impl Default for Settings {
             delivery: Delivery::default(),
             park: Park::default(),
             pitch_mix: PitchMix::default(),
+            music: true,
+            effects: true,
         }
     }
 }
@@ -97,6 +103,8 @@ impl Settings {
             }
             Action::Repertoire => self.pitch_mix.repertoire = self.pitch_mix.repertoire.next(),
             Action::BreakSize => self.pitch_mix.break_size = self.pitch_mix.break_size.next(),
+            Action::Music => self.music = !self.music,
+            Action::Effects => self.effects = !self.effects,
             _ => {}
         }
     }
@@ -212,6 +220,25 @@ impl<'a> Ui<'a> {
 
     pub fn menu(&mut self, settings: &Settings) -> Option<Action> {
         let s = self.scale;
+        let audio_x = screen_width() - 160.0 * s;
+        let music = self.button(
+            Rect::new(audio_x, 20.0 * s, 140.0 * s, 42.0 * s),
+            if settings.music {
+                "BGM オン"
+            } else {
+                "BGM オフ"
+            },
+            false,
+        );
+        let effects = self.button(
+            Rect::new(audio_x, 72.0 * s, 140.0 * s, 42.0 * s),
+            if settings.effects {
+                "効果音 オン"
+            } else {
+                "効果音 オフ"
+            },
+            false,
+        );
         let x = 28.0 * s;
         let y = (screen_height() - 657.0 * s) * 0.5;
         let w = 436.0 * s;
@@ -303,6 +330,8 @@ impl<'a> Ui<'a> {
             (park, Action::Park),
             (repertoire, Action::Repertoire),
             (break_size, Action::BreakSize),
+            (music, Action::Music),
+            (effects, Action::Effects),
         ]
         .into_iter()
         .find_map(|(hit, action)| hit.then_some(action))

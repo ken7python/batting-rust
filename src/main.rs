@@ -10,6 +10,7 @@ mod sound;
 mod ui;
 
 use defense::Defense;
+use flight::Outcome;
 use macroquad::input::utils::{register_input_subscriber, repeat_all_miniquad_input};
 use macroquad::miniquad::EventHandler;
 use macroquad::prelude::*;
@@ -30,6 +31,7 @@ enum Screen {
 #[derive(Default)]
 struct FrameInput {
     lost: bool,
+    away: bool,
     drag_from: Option<Vec2>,
     actions: Vec<BatInput>,
 }
@@ -45,7 +47,12 @@ impl EventHandler for FrameInput {
     fn draw(&mut self) {}
     fn window_minimized_event(&mut self) {
         self.lost = true;
+        self.away = true;
         self.drag_from = None;
+    }
+
+    fn window_restored_event(&mut self) {
+        self.away = false;
     }
 
     fn mouse_button_down_event(&mut self, btn: MouseButton, x: f32, y: f32) {
@@ -88,7 +95,8 @@ fn window_conf() -> Conf {
 async fn main() {
     let font = load_ttf_font_from_bytes(include_bytes!("../assets/BattingSans.ttf"))
         .expect("bundled UI font must be a valid TTF");
-    let sounds = Sounds::load().await;
+    let mut sounds = Sounds::load().await;
+    let mut audio_started = false;
     let mut screen = Screen::Menu;
     let mut settings = Settings::default();
     let subscriber = register_input_subscriber();
@@ -97,6 +105,7 @@ async fn main() {
 
     loop {
         repeat_all_miniquad_input(&mut input, subscriber);
+        audio_started |= is_mouse_button_pressed(MouseButton::Left);
         let dt = f64::from(get_frame_time().min(0.1));
         let camera = batter_camera();
         let size = vec2(screen_width(), screen_height());
@@ -121,10 +130,11 @@ async fn main() {
                         BatInput::Drag(delta) if size == previous_size => {
                             aim.drag(aim_movement(&camera, delta / dpi) * settings.sensitivity());
                         }
-                        BatInput::Release
-                            if at < session.play.pitch.end_time() && aim.release(at) =>
-                        {
-                            sounds.swing()
+                        BatInput::Release => {
+                            let swung = at < session.play.pitch.end_time() && aim.release(at);
+                            if swung && settings.effects {
+                                sounds.swing();
+                            }
                         }
                         _ => {}
                     }
@@ -134,9 +144,29 @@ async fn main() {
                 }
             }
             let was_pitched = matches!(session.play.phase, Phase::Pitch);
+            let was_winding_up = was_pitched && session.play.time < 0.0;
+            let was_resolved = matches!(session.play.phase, Phase::Result(_));
+            let fence_was_cleared =
+                matches!(&session.play.phase, Phase::Flight(flight) if flight.cleared_fence);
             let summary = session.tick(dt);
-            if was_pitched && let Phase::Flight(flight) = &session.play.phase {
-                sounds.contact(flight.strong);
+            if settings.effects {
+                if was_winding_up && session.play.time >= 0.0 {
+                    sounds.pitch();
+                }
+                if let Phase::Flight(flight) = &session.play.phase {
+                    if was_pitched {
+                        sounds.contact(flight.strong);
+                    }
+                    if flight.cleared_fence && !fence_was_cleared {
+                        sounds.result(Outcome::Homer);
+                    }
+                }
+                if !was_resolved
+                    && let Phase::Result(card) = &session.play.phase
+                    && !(fence_was_cleared && card.outcome == Outcome::Homer)
+                {
+                    sounds.result(card.outcome);
+                }
             }
             if let Some(record) = summary {
                 screen = Screen::Summary(record);
@@ -192,6 +222,8 @@ async fn main() {
                 | Action::Form
                 | Action::Park
                 | Action::Repertoire
+                | Action::Music
+                | Action::Effects
                 | Action::BreakSize => settings.change(action),
                 Action::Pause | Action::Resume => {
                     if let Screen::Game(run) = &mut screen {
@@ -204,6 +236,8 @@ async fn main() {
                 }
             }
         }
+        let paused = matches!(&screen, Screen::Game(session) if session.paused);
+        sounds.set_music(audio_started && settings.music && !paused && !input.away);
         next_frame().await;
     }
 }
