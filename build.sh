@@ -25,6 +25,16 @@ build_web() {
     printf '%s\n' "$output/index.html"
 }
 
+build_pages() {
+    build_web
+    mkdir -p play/licenses
+    install -m 644 dist/web/batting.wasm dist/web/mq_js_bundle.js play/
+    install -m 644 dist/web/licenses/*.txt play/licenses/
+    touch .nojekyll
+    awk '/^<head>$/ { print; print "  <base href=\"./play/\">"; next } { print }' \
+        dist/web/index.html > index.html
+}
+
 build_macos() {
     local target=aarch64-apple-darwin
     local target_dir bundle
@@ -66,7 +76,7 @@ else:
 }
 
 usage() {
-    printf 'Usage: %s [all|web|macos]\n' "$0"
+    printf 'Usage: %s [all|web|macos|pages]\n' "$0"
     printf '%s\n' 'Default: build both Web and macOS.'
 }
 
@@ -77,6 +87,7 @@ fi
 
 case "${1:-all}" in
     web) build_web ;;
+    pages) build_pages ;;
     macos) build_macos ;;
     all) build_web; build_macos ;;
     -h|--help) usage ;;

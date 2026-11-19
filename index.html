@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <base href="./play/">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Batting Club</title>
+  <style>
+    html { color-scheme: dark; }
+    body { margin: 0; overflow: hidden; background: #0d2024; }
+    canvas { display: block; width: 100vw; height: 100vh; outline: none; touch-action: none; }
+    #start-error { position: fixed; inset: 24px auto auto 24px; padding: 16px; font: 16px system-ui; }
+  </style>
+</head>
+<body>
+  <canvas id="glcanvas" tabindex="0" aria-label="Batting Club 3Dバッティングゲーム"></canvas>
+  <p id="start-error" role="alert" hidden></p>
+  <script src="./mq_js_bundle.js"></script>
+  <script>
+    (() => {
+      const canvas = document.getElementById("glcanvas");
+      const error = document.getElementById("start-error");
+      if (location.protocol === "file:" || typeof load !== "function") {
+        error.textContent = location.protocol === "file:"
+          ? "このゲームを開くには、Webサーバーから index.html を表示してください。"
+          : "ゲームの読み込みに失敗しました。";
+        error.hidden = false;
+        return;
+      }
+      canvas.addEventListener("pointerdown", (event) => {
+        if (event.pointerType === "mouse" && event.button === 0) {
+          canvas.setPointerCapture(event.pointerId);
+        }
+      });
+      load("./batting.wasm");
+    })();
+  </script>
+</body>
+</html>

@@ -19,6 +19,8 @@ rustup target add wasm32-unknown-unknown aarch64-apple-darwin
 
 ## Web版
 
+ブラウザでそのまま遊べます。[GitHub Pagesで Batting Club を開く](https://pages.kencode.jp/batting-rust/)
+
 Web版だけをビルドしてローカルで遊ぶ場合は次のコマンドを使います。
 
 ```sh
@@ -28,6 +30,8 @@ python3 -m http.server 8000 --directory dist/web
 ```
 
 ブラウザで `http://localhost:8000/` を開きます。配布する際は、`dist/web/index.html` と同じディレクトリの Wasm、ローダー、ライセンスをまとめて静的HTTPサーバーへ配置します。
+
+GitHub Pagesを更新するには `./build.sh pages` を実行し、生成されたルートの `index.html`、`.nojekyll`、`play/` をコミットして `main` にプッシュします。公開元は GitHub Pages の `main` ブランチの `/(root)` です。
 
 ## macOS版
 
