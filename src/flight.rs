@@ -34,7 +34,7 @@ pub struct Flight {
     pub position: Vec3,
     pub velocity: Vec3,
     pub elapsed: f32,
-    strong: bool,
+    pub strong: bool,
     accumulator: f64,
 }
 
