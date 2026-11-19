@@ -2,6 +2,7 @@ use macroquad::prelude::*;
 
 use crate::batting::{Aim, Contact, Grade, WINDUP, grade, in_zone};
 use crate::flight::{Flight, Outcome};
+use crate::park::Park;
 use crate::pitch::Pitch;
 
 pub struct ResultCard {
@@ -18,6 +19,7 @@ pub enum Phase {
 
 pub struct Play {
     pub pitch: Pitch,
+    pub park: Park,
     pub time: f64,
     pub result_time: f64,
     pub phase: Phase,
@@ -26,9 +28,10 @@ pub struct Play {
 }
 
 impl Play {
-    pub fn new(pitch: Pitch) -> Self {
+    pub fn new(pitch: Pitch, park: Park) -> Self {
         Self {
             pitch,
+            park,
             time: -WINDUP,
             result_time: 0.0,
             phase: Phase::Pitch,
@@ -64,7 +67,7 @@ impl Play {
                 let bounced = self.pitch.bounce_time.is_some();
                 if let Some(hit) = evaluated.filter(|g| !bounced && g.contact != Contact::Miss) {
                     self.contact = Some(hit);
-                    let mut flight = Flight::new(self.pitch.crossing, hit);
+                    let mut flight = Flight::new(self.pitch.crossing, hit, self.park);
                     flight.advance(self.time - self.pitch.duration);
                     self.phase = Phase::Flight(flight);
                 } else if self.time >= self.pitch.end_time() {
@@ -107,13 +110,16 @@ mod tests {
     use crate::pitch::{Delivery, PitchKind, PitchSpeed};
 
     fn fastball() -> Play {
-        Play::new(Pitch::new(
-            PitchKind::Fastball,
-            Delivery::default(),
-            CENTER,
-            PitchSpeed::Normal,
-            0.5,
-        ))
+        Play::new(
+            Pitch::new(
+                PitchKind::Fastball,
+                Delivery::default(),
+                CENTER,
+                PitchSpeed::Normal,
+                0.5,
+            ),
+            Park::Central,
+        )
     }
 
     #[test]

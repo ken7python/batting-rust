@@ -2,11 +2,10 @@ use macroquad::camera::Camera;
 use macroquad::prelude::*;
 
 use crate::batting::*;
+use crate::park::Park;
 use crate::pitch::{Delivery, PitchForm};
 
 pub const MOUND: Vec3 = vec3(0.0, 0.0, -17.0);
-pub const FENCE_RADIUS: f32 = 90.0;
-pub const FENCE_HEIGHT: f32 = 3.0;
 const GRASS: Color = Color::from_rgba(49, 104, 74, 255);
 const DIRT: Color = Color::from_rgba(174, 113, 78, 255);
 const FENCE: Color = Color::from_rgba(23, 67, 59, 255);
@@ -69,14 +68,38 @@ fn line_on_ground(a: Vec3, b: Vec3, width: f32, color: Color) {
     flat_quad([a + normal, a - normal, b - normal, b + normal], color);
 }
 
-pub fn field() {
-    draw_plane(vec3(0.0, -0.04, -95.0), vec2(155.0, 152.0), None, GRASS);
+pub fn field(park: Park) {
+    let (fence_radius, fence_height) = park.fence();
+    let (sky, grass, stripes, wall, seats) = match park {
+        Park::Central => (
+            Color::from_rgba(147, 198, 218, 255),
+            GRASS,
+            Color::from_rgba(56, 116, 80, 255),
+            FENCE,
+            [
+                Color::from_rgba(68, 100, 113, 255),
+                Color::from_rgba(75, 109, 120, 255),
+            ],
+        ),
+        Park::Sunset => (
+            Color::from_rgba(228, 165, 128, 255),
+            Color::from_rgba(55, 100, 73, 255),
+            Color::from_rgba(65, 114, 79, 255),
+            Color::from_rgba(44, 51, 82, 255),
+            [
+                Color::from_rgba(89, 74, 105, 255),
+                Color::from_rgba(103, 85, 114, 255),
+            ],
+        ),
+    };
+    clear_background(sky);
+    draw_plane(vec3(0.0, -0.04, -95.0), vec2(155.0, 152.0), None, grass);
     for i in 0..12 {
         draw_plane(
             vec3(0.0, -0.035, -7.0 - i as f32 * 8.0),
             vec2(100.0, 2.0),
             None,
-            Color::from_rgba(56, 116, 80, 255),
+            stripes,
         );
     }
     draw_cylinder(vec3(0.0, -0.03, 0.0), 2.3, 2.3, 0.04, None, DIRT);
@@ -109,14 +132,14 @@ pub fn field() {
         );
     }
     for side in [-1.0, 1.0] {
-        let end = vec3(side, 0.0, -1.0).normalize() * FENCE_RADIUS;
+        let end = vec3(side, 0.0, -1.0).normalize() * fence_radius;
         line_on_ground(
             plate + Vec3::Y * 0.01,
             end + Vec3::Y * 0.042,
             0.05,
             FOUL_LINE,
         );
-        draw_cylinder(end + Vec3::Y * FENCE_HEIGHT, 0.08, 0.08, 11.0, None, GOLD);
+        draw_cylinder(end + Vec3::Y * fence_height, 0.08, 0.08, 11.0, None, GOLD);
     }
     flat_quad(
         [
@@ -140,20 +163,13 @@ pub fn field() {
     for i in 0..32 {
         let edge = |j| {
             let angle = (j as f32 / 32.0 - 0.5) * std::f32::consts::FRAC_PI_2;
-            vec3(angle.sin() * FENCE_RADIUS, 0.0, -angle.cos() * FENCE_RADIUS)
+            vec3(angle.sin() * fence_radius, 0.0, -angle.cos() * fence_radius)
         };
         let (a, b) = (edge(i), edge(i + 1));
-        let top = Vec3::Y * FENCE_HEIGHT;
-        flat_quad([a, b, b + top, a + top], FENCE);
-        flat_quad(
-            [
-                a + top,
-                b + top,
-                b + top + Vec3::Y * 0.17,
-                a + top + Vec3::Y * 0.17,
-            ],
-            GOLD,
-        );
+        let top = Vec3::Y * fence_height;
+        let band = top - Vec3::Y * 0.17;
+        flat_quad([a, b, b + band, a + band], wall);
+        flat_quad([a + band, b + band, b + top, a + top], GOLD);
         let back = |p: Vec3| p * 1.07 - Vec3::Y;
         flat_quad(
             [
@@ -162,11 +178,7 @@ pub fn field() {
                 back(b) + Vec3::Y * 8.0,
                 back(a) + Vec3::Y * 8.0,
             ],
-            if i % 2 == 0 {
-                Color::from_rgba(68, 100, 113, 255)
-            } else {
-                Color::from_rgba(75, 109, 120, 255)
-            },
+            seats[i % 2],
         );
     }
 }

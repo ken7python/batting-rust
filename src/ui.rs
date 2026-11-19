@@ -1,6 +1,7 @@
 use macroquad::prelude::*;
 
 use crate::batting::{Grade, MEET_RADIUS};
+use crate::park::Park;
 use crate::pitch::{Delivery, PitchForm, PitchKind, PitchSpeed, ThrowingHand};
 use crate::play::{Phase, ResultCard};
 use crate::session::{CHALLENGE_LENGTH, Mode, Record, Session};
@@ -22,6 +23,7 @@ pub enum Action {
     Sensitivity,
     Hand,
     Form,
+    Park,
     Pause,
     Resume,
     Menu,
@@ -33,6 +35,7 @@ pub struct Settings {
     pub preview: bool,
     sensitivity: usize,
     pub delivery: Delivery,
+    pub park: Park,
 }
 
 impl Default for Settings {
@@ -43,6 +46,7 @@ impl Default for Settings {
             preview: false,
             sensitivity: 1,
             delivery: Delivery::default(),
+            park: Park::default(),
         }
     }
 }
@@ -80,6 +84,12 @@ impl Settings {
                 self.delivery.form = match self.delivery.form {
                     PitchForm::Overhand => PitchForm::Sidearm,
                     PitchForm::Sidearm => PitchForm::Overhand,
+                };
+            }
+            Action::Park => {
+                self.park = match self.park {
+                    Park::Central => Park::Sunset,
+                    Park::Sunset => Park::Central,
                 };
             }
             _ => {}
@@ -207,6 +217,11 @@ impl<'a> Ui<'a> {
             settings.delivery.form.label(),
             false,
         );
+        let park = self.button(
+            rect(224.0, 500.0, 188.0, 44.0),
+            &format!("{} {:.0}m", settings.park.label(), settings.park.fence().0),
+            false,
+        );
         self.text(
             "操作  左ボタンを押したままマウスを動かす",
             x + 24.0 * s,
@@ -222,6 +237,7 @@ impl<'a> Ui<'a> {
             (sensitivity, Action::Sensitivity),
             (hand, Action::Hand),
             (form, Action::Form),
+            (park, Action::Park),
         ]
         .into_iter()
         .find_map(|(hit, action)| hit.then_some(action))
