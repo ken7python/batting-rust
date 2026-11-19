@@ -47,6 +47,7 @@ pub fn return_camera(returning: &FieldReturn) -> Camera3D {
     Camera3D {
         position: target + vec3(span * 0.35 + 7.0, span * 0.40 + 5.0, span * 0.5 + 9.0),
         target,
+        z_near: 0.65,
         ..batter_camera()
     }
 }
