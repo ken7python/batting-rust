@@ -10,6 +10,7 @@ mod ui;
 use macroquad::input::utils::{register_input_subscriber, repeat_all_miniquad_input};
 use macroquad::miniquad::EventHandler;
 use macroquad::prelude::*;
+use pitch::ThrowingHand;
 use play::{Phase, Play};
 use scene::*;
 use session::{Mode, Record, Session};
@@ -116,7 +117,7 @@ async fn main() {
         clear_background(SKY);
         let action = match &screen {
             Screen::Menu => {
-                draw_idle(&camera);
+                draw_idle(&camera, settings.hand);
                 ui.menu(&settings)
             }
             Screen::Game(run) => {
@@ -124,19 +125,25 @@ async fn main() {
                 ui.game(run)
             }
             Screen::Summary(record) => {
-                draw_idle(&camera);
+                draw_idle(&camera, settings.hand);
                 ui.summary(*record)
             }
         };
 
         if let Some(action) = action {
             match action {
-                Action::Challenge => screen = Screen::Game(Session::new(Mode::Challenge)),
-                Action::Practice => screen = Screen::Game(Session::new(settings.practice())),
-                Action::Menu => screen = Screen::Menu,
-                Action::Pitch | Action::Speed | Action::Preview | Action::Sensitivity => {
-                    settings.change(action)
+                Action::Challenge => {
+                    screen = Screen::Game(Session::new(Mode::Challenge, settings.hand))
                 }
+                Action::Practice => {
+                    screen = Screen::Game(Session::new(settings.practice(), settings.hand))
+                }
+                Action::Menu => screen = Screen::Menu,
+                Action::Pitch
+                | Action::Speed
+                | Action::Preview
+                | Action::Sensitivity
+                | Action::Hand => settings.change(action),
                 Action::Pause | Action::Resume => {
                     if let Screen::Game(run) = &mut screen {
                         if matches!(action, Action::Pause) {
@@ -152,10 +159,10 @@ async fn main() {
     }
 }
 
-fn draw_idle(camera: &Camera3D) {
+fn draw_idle(camera: &Camera3D, hand: ThrowingHand) {
     set_camera(camera);
     field();
-    pitcher(-batting::WINDUP);
+    pitcher(-batting::WINDUP, hand);
     set_default_camera();
 }
 
@@ -180,7 +187,7 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: bool) {
         _ => {
             set_camera(camera);
             field();
-            pitcher(play.time);
+            pitcher(play.time, play.pitch.hand);
             bat(play.time, &play.aim);
             if matches!(play.phase, Phase::Pitch) && play.time >= 0.0 {
                 ball(play.pitch.position(play.time));

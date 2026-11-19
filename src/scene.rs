@@ -2,9 +2,9 @@ use macroquad::camera::Camera;
 use macroquad::prelude::*;
 
 use crate::batting::*;
+use crate::pitch::ThrowingHand;
 
 pub const MOUND: Vec3 = vec3(0.0, 0.0, -17.0);
-pub const RELEASE: Vec3 = vec3(0.40, 1.91, -16.25);
 pub const FENCE_RADIUS: f32 = 90.0;
 pub const FENCE_HEIGHT: f32 = 3.0;
 const GRASS: Color = Color::from_rgba(49, 104, 74, 255);
@@ -169,12 +169,14 @@ pub fn field() {
     }
 }
 
-pub fn pitcher(time: f64) {
+pub fn pitcher(time: f64, throwing_hand: ThrowingHand) {
     let jersey = Color::from_rgba(245, 239, 220, 255);
     let red = Color::from_rgba(171, 57, 46, 255);
     let skin = Color::from_rgba(212, 151, 105, 255);
     let wind = ((time + WINDUP) / WINDUP).clamp(0.0, 1.0) as f32;
     let follow = (time / 0.31).clamp(0.0, 1.0) as f32;
+    let mirror = throwing_hand.sign();
+    let release = throwing_hand.release();
     let body = MOUND + vec3(0.0, 1.14, 0.12 + 0.2 * wind);
     draw_cube(body, vec3(0.44, 0.55, 0.24), None, jersey);
     draw_sphere(body + vec3(0.0, 0.43, 0.01), 0.15, None, skin);
@@ -185,7 +187,7 @@ pub fn pitcher(time: f64) {
         red,
     );
     for side in [-1.0, 1.0] {
-        let lift = if side < 0.0 {
+        let lift = if side * mirror < 0.0 {
             (wind * std::f32::consts::PI).sin() * 0.30
         } else {
             0.0
@@ -206,17 +208,17 @@ pub fn pitcher(time: f64) {
     let hand = if time <= 0.0 {
         (body
             + vec3(
-                0.25,
+                0.25 * mirror,
                 0.20 + (wind * std::f32::consts::PI).sin() * 0.55,
                 0.10,
             ))
-        .lerp(RELEASE, wind.powi(4))
+        .lerp(release, wind.powi(4))
     } else {
-        RELEASE.lerp(body + vec3(-0.25, -0.19, 0.34), follow)
+        release.lerp(body + vec3(-0.25 * mirror, -0.19, 0.34), follow)
     };
     for i in 0..6 {
         draw_sphere(
-            (body + vec3(0.21, 0.17, 0.04)).lerp(hand, i as f32 / 6.0),
+            (body + vec3(0.21 * mirror, 0.17, 0.04)).lerp(hand, i as f32 / 6.0),
             0.081,
             None,
             if i < 3 { red } else { skin },
