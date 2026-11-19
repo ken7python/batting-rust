@@ -1,0 +1,39 @@
+# Batting Club
+
+RustとMacroquadで作った3Dバッティングゲームです。打席で左ボタンを押し、ドラッグで緑の照準を動かして、タイミングを合わせて離します。Escキーで一時停止できます。
+
+10球チャレンジでは本塁打やフェア打球で得点を競います。練習では11球種の指定、投球速度の変更、通過位置の予告ができます。タイトル画面から投手の利き腕とマウス感度を変更できます。
+
+## Web版
+
+Rust、Bash、Python 3を用意し、プロジェクトのルートで実行します。
+
+```sh
+rustup target add wasm32-unknown-unknown
+./scripts/build.sh web
+python3 -m http.server 8000 --directory dist/web
+```
+
+ブラウザで `http://localhost:8000/` を開きます。配布する際は、`dist/web/index.html` と同じディレクトリの Wasm、ローダー、ライセンスをまとめて静的HTTPサーバーへ配置します。
+
+## macOS版
+
+macOSでXcode Command Line ToolsとRustを用意し、以下を実行します。
+
+```sh
+rustup target add aarch64-apple-darwin
+./scripts/build.sh macos
+open dist/macos/Batting.app
+```
+
+生成するアプリはApple Silicon向けです。Linuxでクロスビルドする場合は、`SDKROOT` にmacOS SDKを指定し、Clangとlldを用意して同じスクリプトを実行します。
+
+## 開発とテスト
+
+```sh
+cargo run --locked
+cargo test --locked --all-targets
+cargo clippy --locked --all-targets -- -D warnings
+```
+
+ゲームのルールと制作方針は [設計書](GAME_DESIGN.md) を参照してください。日本語UIの Batting Sans は [Noto Sans JP](https://github.com/google/fonts/tree/main/ofl/notosansjp) をもとに、使用する文字に絞って作成しています。[フォントライセンス](assets/OFL-NotoSansJP.txt)
