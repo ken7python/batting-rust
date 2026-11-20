@@ -153,6 +153,12 @@ pub extern "C" fn batting_ios_main() {
 }
 
 #[cfg(target_os = "ios")]
+#[unsafe(no_mangle)]
+pub extern "C" fn batting_ios_view() -> *mut std::ffi::c_void {
+    macroquad::miniquad::window::apple_view().cast()
+}
+
+#[cfg(target_os = "ios")]
 unsafe extern "C" {
     fn batting_ios_metrics(insets: *mut f32) -> std::ffi::c_int;
 }
