@@ -74,7 +74,19 @@ pub fn return_camera(returning: &FieldReturn) -> Camera3D {
 
 pub fn project(camera: &Camera3D, position: Vec3) -> Vec2 {
     let clip = camera.matrix() * position.extend(1.0);
+    screen_point(clip.truncate() / clip.w)
+}
+
+pub fn visible_ball(camera: &Camera3D, position: Vec3) -> Option<Vec2> {
+    let clip = camera.matrix() * position.extend(1.0);
+    if clip.w <= 0.0 {
+        return None;
+    }
     let ndc = clip.truncate() / clip.w;
+    (ndc.abs().max_element() < 1.0).then(|| screen_point(ndc))
+}
+
+fn screen_point(ndc: Vec3) -> Vec2 {
     vec2(
         (ndc.x + 1.0) * screen_width() * 0.5,
         (1.0 - ndc.y) * screen_height() * 0.5,
