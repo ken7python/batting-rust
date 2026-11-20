@@ -115,9 +115,17 @@ impl Flight {
         };
         let horizontal =
             ((grade.timing / HIT_TIMING) as f32 * 1.05 + grade.offset.x * 0.48).clamp(-1.18, 1.18);
-        // Grade offsets are cursor minus ball, so a ball above the cursor lifts.
-        let ball_above_cursor = -grade.offset.y;
-        let vertical = (0.43 + ball_above_cursor * 3.1).clamp(-0.16, 0.83);
+        // Positive offset means the player aimed above the ball in world space.
+        let height = (grade.offset.y / MEET_RADIUS.y).clamp(-1.0, 1.0);
+        // A slightly low barrel drives the ball just above the infield.
+        let angle_degrees = if height < -0.15 {
+            4.0 + (height + 0.15) * (32.0 / 0.85)
+        } else if height < 0.0 {
+            24.6 + height * (20.6 / 0.15)
+        } else {
+            24.6 + height * 49.0
+        };
+        let vertical = angle_degrees.to_radians();
         let velocity = vec3(
             horizontal.sin() * vertical.cos(),
             vertical.sin(),
@@ -472,22 +480,36 @@ mod tests {
     }
 
     #[test]
-    fn contact_above_the_cursor_lifts_and_contact_below_sends_the_ball_down() {
-        let flight = |offset_y| {
-            Flight::new(
-                CENTER,
-                Grade {
-                    contact: Contact::Touch,
-                    timing: 0.0,
-                    offset: vec2(0.0, offset_y),
-                },
-                Park::Central,
-            )
-        };
-        let above = flight(-0.15);
-        let below = flight(0.15);
-        assert!(above.velocity.y > flight(0.0).velocity.y);
-        assert!(below.velocity.y < 0.0);
+    fn aim_height_selects_grounder_drive_home_run_or_high_fly() {
+        use crate::batting::{SWING_LEAD, Swing, grade};
+        for (height, angles, distances, homer) in [
+            (-0.85, -26.0..-20.0, 0.0..3.0, false),
+            (-0.15, 3.0..5.0, 50.0..60.0, false),
+            (0.15, 30.0..34.0, 190.0..215.0, true),
+            (0.85, 63.0..69.0, 20.0..33.0, false),
+        ] {
+            let swing = Swing {
+                time: 0.5 - SWING_LEAD,
+                aim: CENTER + Vec2::Y * MEET_RADIUS.y * height,
+            };
+            let hit = grade(swing, 0.5, CENTER);
+            let flight = Flight::new(CENTER, hit, Park::Central);
+            let angle = flight
+                .velocity
+                .y
+                .atan2(flight.velocity.xz().length())
+                .to_degrees();
+            assert!(angles.contains(&angle), "height {height}, angle {angle}");
+            let carry = airborne_landing(flight.position, flight.velocity)
+                .xz()
+                .length();
+            let (result, _) = simulate(1.0 / 60.0, hit, Park::Central);
+            assert!(
+                distances.contains(&carry),
+                "height {height}, carry {carry} m"
+            );
+            assert_eq!(result == Outcome::Homer, homer);
+        }
     }
 
     #[test]
@@ -884,7 +906,7 @@ mod tests {
         let hit = Grade {
             contact: Contact::Touch,
             timing: 0.0,
-            offset: vec2(0.025, 0.14),
+            offset: vec2(0.025, -0.05),
         };
         for park in [Park::Central, Park::Sunset] {
             for (tap, expected) in [(false, Outcome::Double), (true, Outcome::Triple)] {
