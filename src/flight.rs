@@ -1,8 +1,9 @@
 use macroquad::prelude::*;
 
 use crate::batting::{BALL_RADIUS, Contact, Grade, HIT_TIMING, MEET_RADIUS};
-use crate::defense::{Defense, FIELDING_REACH, FieldReturn, Fielder, RUNNER_TO_FIRST};
+use crate::defense::{Defense, FIELDING_REACH, FieldReturn, Fielder};
 use crate::park::Park;
+use crate::runner::Runner;
 
 pub const STEP: f64 = 1.0 / 120.0;
 
@@ -11,6 +12,8 @@ pub enum Outcome {
     Homer,
     HardFair,
     Fair,
+    Double,
+    Triple,
     FlyOut(Fielder),
     GroundOut(Fielder),
     Foul,
@@ -25,6 +28,8 @@ impl Outcome {
             Self::Homer => "ホームラン",
             Self::HardFair => "強いヒット",
             Self::Fair => "ヒット",
+            Self::Double => "二塁打",
+            Self::Triple => "三塁打",
             Self::FlyOut(_) => "フライアウト",
             Self::GroundOut(_) => "内野ゴロアウト",
             Self::Foul => "ファウル",
@@ -50,6 +55,7 @@ pub struct Flight {
     pub cleared_fence: bool,
     pub defense: Defense,
     pub returning: Option<FieldReturn>,
+    pub runner: Runner,
     park: Park,
     rolling: bool,
     hit_wall: bool,
@@ -84,6 +90,7 @@ impl Flight {
             cleared_fence: false,
             defense: Defense::new(park),
             returning: None,
+            runner: Runner::default(),
             park,
             rolling: false,
             hit_wall: false,
@@ -105,17 +112,19 @@ impl Flight {
     fn step(&mut self) -> Option<Outcome> {
         let dt = STEP as f32;
         self.elapsed += dt;
+        if !self.cleared_fence {
+            self.runner.advance(STEP);
+        }
         if let Some(returning) = &mut self.returning {
-            let arrived = returning.advance(&mut self.defense, dt);
-            self.position = returning.ball_position(&self.defense);
+            if !returning.arrived() {
+                returning.advance(&mut self.defense, dt);
+                self.position = returning.ball_position(&self.defense);
+            }
             let fielder = returning.fielder;
-            return arrived.then(|| {
-                if fielder.infield() && self.elapsed < RUNNER_TO_FIRST {
-                    Outcome::GroundOut(fielder)
-                } else {
-                    self.hit()
-                }
-            });
+            return returning
+                .arrived()
+                .then(|| self.fielded_hit(fielder))
+                .flatten();
         }
         if self.rolling {
             self.roll(dt);
@@ -222,11 +231,13 @@ impl Flight {
             .map_or(self.position, |returning| returning.pickup)
     }
 
-    fn hit(&self) -> Outcome {
-        if self.strong {
-            Outcome::HardFair
-        } else {
-            Outcome::Fair
+    fn fielded_hit(&self, fielder: Fielder) -> Option<Outcome> {
+        match self.runner.reached() {
+            0 => fielder.infield().then_some(Outcome::GroundOut(fielder)),
+            1 if self.strong => Some(Outcome::HardFair),
+            1 => Some(Outcome::Fair),
+            2 => Some(Outcome::Double),
+            _ => Some(Outcome::Triple),
         }
     }
 }
@@ -330,7 +341,11 @@ mod tests {
                 } else {
                     assert!(matches!(
                         outcome,
-                        Outcome::Fair | Outcome::FlyOut(_) | Outcome::GroundOut(_)
+                        Outcome::Fair
+                            | Outcome::Double
+                            | Outcome::Triple
+                            | Outcome::FlyOut(_)
+                            | Outcome::GroundOut(_)
                     ));
                     assert!(end.xz().length() <= park.fence().0 + 1e-4);
                 }
@@ -397,6 +412,7 @@ mod tests {
             flight.velocity = vec3(0.0, 0.0, -13.0);
             flight.rolling = true;
             flight.elapsed = elapsed;
+            flight.runner.advance(f64::from(elapsed));
             let mut threw = false;
             let outcome = (0..480).find_map(|_| {
                 let outcome = flight.advance(STEP);
@@ -420,6 +436,33 @@ mod tests {
                     .abs_diff_eq(first, 0.01)
             );
         }
+    }
+
+    #[test]
+    fn a_return_counts_only_the_bases_the_runner_has_touched() {
+        let mut flight = Flight::new(
+            CENTER,
+            Grade {
+                contact: Contact::Touch,
+                timing: 0.0,
+                offset: Vec2::ZERO,
+            },
+            Park::Central,
+        );
+        flight.runner.advance(3.95 - STEP);
+        assert_eq!(
+            flight.fielded_hit(Fielder::Second),
+            Some(Outcome::GroundOut(Fielder::Second))
+        );
+        assert_eq!(flight.fielded_hit(Fielder::Center), None);
+        flight.runner.advance(STEP);
+        assert_eq!(flight.fielded_hit(Fielder::Second), Some(Outcome::Fair));
+        flight.runner.advance(2.70);
+        assert_eq!(flight.fielded_hit(Fielder::Center), Some(Outcome::Fair));
+        flight.runner.advance(0.05);
+        assert_eq!(flight.fielded_hit(Fielder::Center), Some(Outcome::Double));
+        flight.runner.advance(2.75);
+        assert_eq!(flight.fielded_hit(Fielder::Center), Some(Outcome::Triple));
     }
 
     #[test]

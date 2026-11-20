@@ -61,7 +61,9 @@ impl Sounds {
     pub fn result(&self, outcome: Outcome) {
         let (sound, volume) = match outcome {
             Outcome::Homer => (&self.homer, 0.60),
-            Outcome::Fair | Outcome::HardFair => (&self.hit, 0.40),
+            Outcome::Fair | Outcome::HardFair | Outcome::Double | Outcome::Triple => {
+                (&self.hit, 0.40)
+            }
             Outcome::Foul => (&self.foul, 0.46),
             Outcome::FlyOut(_) | Outcome::GroundOut(_) => (&self.out, 0.48),
             Outcome::Ball | Outcome::Strike | Outcome::Whiff => (&self.glove, 0.42),

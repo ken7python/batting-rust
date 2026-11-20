@@ -5,6 +5,7 @@ use crate::defense::{Defense, FieldReturn};
 use crate::flight::{Flight, Outcome};
 use crate::park::Park;
 use crate::pitch::Pitch;
+use crate::runner::Runner;
 
 pub struct ResultCard {
     pub outcome: Outcome,
@@ -19,6 +20,7 @@ pub struct FieldingView {
     pub ball: Vec3,
     pub velocity: Vec3,
     pub elapsed: f32,
+    pub runner: Runner,
 }
 
 pub enum Phase {
@@ -131,6 +133,7 @@ fn batted_ball_result(outcome: Outcome, grade: Option<Grade>, flight: &Flight) -
             ball: flight.position,
             velocity: flight.velocity,
             elapsed: flight.elapsed,
+            runner: flight.runner,
         }
     });
     ResultCard {

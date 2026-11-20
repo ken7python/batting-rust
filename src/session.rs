@@ -33,6 +33,8 @@ pub struct Record {
     pub points: u32,
     pub fair: u32,
     pub home_runs: u32,
+    pub doubles: u32,
+    pub triples: u32,
 }
 
 impl Record {
@@ -40,6 +42,8 @@ impl Record {
         self.completed += 1;
         self.points += match outcome {
             Outcome::Homer => 500,
+            Outcome::Triple => 400,
+            Outcome::Double => 300,
             Outcome::HardFair => 250,
             Outcome::Fair => 100,
             Outcome::Ball => 25,
@@ -51,9 +55,11 @@ impl Record {
         };
         self.fair += u32::from(matches!(
             outcome,
-            Outcome::Homer | Outcome::HardFair | Outcome::Fair
+            Outcome::Homer | Outcome::Triple | Outcome::Double | Outcome::HardFair | Outcome::Fair
         ));
         self.home_runs += u32::from(outcome == Outcome::Homer);
+        self.doubles += u32::from(outcome == Outcome::Double);
+        self.triples += u32::from(outcome == Outcome::Triple);
     }
 }
 
@@ -203,12 +209,14 @@ mod tests {
     }
 
     #[test]
-    fn a_homer_counts_toward_the_fair_total() {
+    fn extra_base_hits_count_toward_the_hit_total() {
         let mut record = Record::default();
         for outcome in [
             Outcome::Homer,
             Outcome::HardFair,
             Outcome::Fair,
+            Outcome::Double,
+            Outcome::Triple,
             Outcome::Ball,
             Outcome::Foul,
             Outcome::Whiff,
@@ -223,9 +231,11 @@ mod tests {
                 record.completed,
                 record.points,
                 record.fair,
-                record.home_runs
+                record.home_runs,
+                record.doubles,
+                record.triples
             ),
-            (9, 875, 3, 1)
+            (11, 1575, 5, 1, 1, 1)
         );
     }
 }

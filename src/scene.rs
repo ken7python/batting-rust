@@ -2,9 +2,10 @@ use macroquad::camera::Camera;
 use macroquad::prelude::*;
 
 use crate::batting::*;
-use crate::defense::{Defense, FIRST_BASE, FieldReturn, Fielder, SECOND_BASE};
+use crate::defense::{Defense, FIRST_BASE, FieldReturn, Fielder, SECOND_BASE, THIRD_BASE};
 use crate::park::Park;
 use crate::pitch::{Delivery, PitchForm};
+use crate::runner::Runner;
 
 pub const MOUND: Vec3 = vec3(0.0, 0.0, -17.0);
 const GRASS: Color = Color::from_rgba(49, 104, 74, 255);
@@ -126,7 +127,7 @@ pub fn field(park: Park) {
 
     let plate = vec3(0.0, 0.032, 0.0);
     let first = vec3(FIRST_BASE.x, 0.032, FIRST_BASE.y);
-    let third = vec3(-19.4, 0.032, -19.4);
+    let third = vec3(THIRD_BASE.x, 0.032, THIRD_BASE.y);
     let second = vec3(SECOND_BASE.x, 0.032, SECOND_BASE.y);
     for (a, b) in [
         (plate, first),
@@ -192,6 +193,37 @@ pub fn field(park: Park) {
                 back(a) + Vec3::Y * 8.0,
             ],
             seats[i % 2],
+        );
+    }
+}
+
+pub fn batter_runner(runner: &Runner, time: f32, active: bool) {
+    let point = runner.position();
+    let feet = vec3(point.x, 0.0, point.y);
+    let facing = runner.direction();
+    let forward = vec3(facing.x, 0.0, facing.y);
+    let side = Vec3::Y.cross(forward);
+    let stride = if active && runner.moving() {
+        (time * 24.0).sin() * 0.28
+    } else {
+        0.0
+    };
+    let jersey = Color::from_rgba(232, 116, 67, 255);
+    draw_cube(feet + Vec3::Y * 1.09, vec3(0.47, 0.60, 0.38), None, jersey);
+    draw_sphere(
+        feet + Vec3::Y * 1.59,
+        0.15,
+        None,
+        Color::from_rgba(216, 165, 118, 255),
+    );
+    draw_cube(feet + Vec3::Y * 1.71, vec3(0.35, 0.10, 0.36), None, jersey);
+    for step_side in [-1.0, 1.0] {
+        let step = stride * step_side;
+        draw_cube(
+            feet + side * (0.14 * step_side) + forward * step + Vec3::Y * (0.46 + step.max(0.0)),
+            vec3(0.18, 0.88, 0.20),
+            None,
+            WHITE,
         );
     }
 }

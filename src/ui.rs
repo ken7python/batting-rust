@@ -4,6 +4,7 @@ use crate::batting::{BARREL_RADIUS, BARREL_TIMING, Grade};
 use crate::park::Park;
 use crate::pitch::{Delivery, PitchForm, PitchKind, PitchMix, PitchSpeed, ThrowingHand};
 use crate::play::{Phase, ResultCard};
+use crate::runner::Runner;
 use crate::session::{CHALLENGE_LENGTH, Mode, Record, Session};
 
 const INK: Color = Color::from_rgba(13, 32, 36, 255);
@@ -119,6 +120,8 @@ enum Draw {
     },
     Fill(Rect, Color),
     Border(Rect, Color),
+    Line(Vec2, Vec2, Color),
+    Dot(Vec2, f32, Color),
 }
 
 pub struct Ui<'a> {
@@ -192,6 +195,10 @@ impl<'a> Ui<'a> {
                 Draw::Border(r, color) => {
                     draw_rectangle_lines(r.x, r.y, r.w, r.h, self.scale, color)
                 }
+                Draw::Line(from, to, color) => {
+                    draw_line(from.x, from.y, to.x, to.y, 1.5 * self.scale, color)
+                }
+                Draw::Dot(center, radius, color) => draw_circle(center.x, center.y, radius, color),
             }
         }
     }
@@ -381,6 +388,11 @@ impl<'a> Ui<'a> {
         }
         if let Phase::Result(card) = &session.play.phase {
             self.feedback(session, card);
+            if let Some(view) = &card.fielding
+                && view.returning.is_some()
+            {
+                self.runner_diamond(&view.runner);
+            }
         } else if let Phase::Flight(flight) = &session.play.phase {
             let h = screen_height();
             self.panel(Rect::new(x, h - 89.0 * s, 195.0 * s, 68.0 * s));
@@ -416,6 +428,9 @@ impl<'a> Ui<'a> {
                 if flight.cleared_fence { AMBER } else { MUTED },
             );
             self.text(&detail, x + 13.0 * s, h - 30.0 * s, 26.0, CREAM);
+            if !flight.cleared_fence {
+                self.runner_diamond(&flight.runner);
+            }
         } else if matches!(session.play.phase, Phase::Pitch) {
             let hint = if session.play.time < 0.0 {
                 if session.play.aim.held {
@@ -463,6 +478,44 @@ impl<'a> Ui<'a> {
             }
         }
         action
+    }
+
+    fn runner_diamond(&mut self, runner: &Runner) {
+        let s = self.scale;
+        let home = vec2(screen_width() - 67.0 * s, screen_height() - 94.0 * s);
+        let corner = 23.0 * s;
+        let bases = [
+            home,
+            home + vec2(corner, -corner),
+            home + vec2(0.0, -2.0 * corner),
+            home + vec2(-corner, -corner),
+        ];
+        let panel = Rect::new(home.x - 45.0 * s, home.y - 58.0 * s, 90.0 * s, 70.0 * s);
+        self.panel(panel);
+        for (index, point) in bases.into_iter().enumerate() {
+            let next = bases[(index + 1) % bases.len()];
+            self.draws.push(Draw::Line(point, next, LINE));
+        }
+        for (index, point) in bases.into_iter().enumerate() {
+            let color = if index > 0 && index <= runner.reached() {
+                AMBER
+            } else {
+                CREAM
+            };
+            self.fill(
+                point.x - 2.5 * s,
+                point.y - 2.5 * s,
+                5.0 * s,
+                5.0 * s,
+                color,
+            );
+        }
+        let marker = home + runner.position() * (corner / crate::defense::FIRST_BASE.x);
+        self.draws.push(Draw::Dot(
+            marker,
+            5.0 * s,
+            Color::from_rgba(232, 116, 67, 255),
+        ));
     }
 
     fn feedback(&mut self, session: &Session, result: &ResultCard) {
@@ -535,6 +588,13 @@ impl<'a> Ui<'a> {
             x + 23.0 * s,
             y + 189.0 * s,
             21.0,
+            MUTED,
+        );
+        self.text(
+            &format!("二塁打  {}    三塁打  {}", record.doubles, record.triples),
+            x + 23.0 * s,
+            y + 216.0 * s,
+            18.0,
             MUTED,
         );
         let replay = self.button(
