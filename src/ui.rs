@@ -503,7 +503,7 @@ impl<'a> Ui<'a> {
                     ),
                 )
             } else {
-                let label = if flight.home_run.is_some() {
+                let label = if flight.home_run {
                     "ホームラン"
                 } else {
                     "飛距離"
@@ -515,14 +515,10 @@ impl<'a> Ui<'a> {
                 x + 13.0 * s,
                 h - 64.0 * s,
                 17.0,
-                if flight.home_run.is_some() {
-                    AMBER
-                } else {
-                    MUTED
-                },
+                if flight.home_run { AMBER } else { MUTED },
             );
             self.text(&detail, x + 13.0 * s, h - 30.0 * s, 26.0, CREAM);
-            if flight.home_run.is_none() {
+            if !flight.home_run {
                 self.runner_diamond(
                     &flight.runner,
                     !session.paused && flight.can_boost_runner(),
@@ -534,15 +530,6 @@ impl<'a> Ui<'a> {
                 .is_some_and(|contact| flight.elapsed - contact.at < 0.8)
             {
                 self.field_call("フェア", AIM_CALL_COLOR);
-            }
-            if let Some(homer) = flight.home_run.filter(|homer| homer.is_big()) {
-                self.hit_banner(
-                    "確定ホームラン",
-                    &format!("{:.0} m", homer.distance),
-                    AMBER,
-                    flight.elapsed - homer.at,
-                    true,
-                );
             }
         } else if matches!(session.play.phase, Phase::Pitch) {
             let hint = if session.play.time < 0.0 {

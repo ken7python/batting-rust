@@ -278,7 +278,7 @@ async fn game() {
             let was_winding_up = was_pitched && session.play.time < 0.0;
             let was_resolved = matches!(session.play.phase, Phase::Result(_));
             let fence_was_cleared =
-                matches!(&session.play.phase, Phase::Flight(flight) if flight.home_run.is_some());
+                matches!(&session.play.phase, Phase::Flight(flight) if flight.home_run);
             let was_fielded =
                 matches!(&session.play.phase, Phase::Flight(flight) if flight.returning.is_some());
             let was_thrown = matches!(&session.play.phase, Phase::Flight(flight)
@@ -292,7 +292,7 @@ async fn game() {
                     if was_pitched {
                         sounds.contact(flight.strong);
                     }
-                    if flight.home_run.is_some() && !fence_was_cleared {
+                    if flight.home_run && !fence_was_cleared {
                         sounds.result(Outcome::Homer);
                     }
                     if let Some(returning) = flight.returning {
@@ -405,25 +405,20 @@ fn draw_idle(camera: &Camera3D, delivery: Delivery, park: Park) {
 }
 
 fn draw_play(play: &Play, camera: &Camera3D, preview: PreviewTiming) {
-    let mut throw_marker = None;
+    let mut ball_marker = None;
     match &play.phase {
         Phase::Flight(flight) => {
             let follow = flight.returning.as_ref().map_or_else(
                 || flight_camera(flight.position, flight.velocity, flight.elapsed),
                 return_camera,
             );
-            let follow = if flight.confident {
-                batter_camera()
-            } else {
-                follow
-            };
             set_camera(&follow);
             field(play.park);
             let catch = flight
                 .defense
                 .chasing
                 .filter(|&fielder| {
-                    flight.home_run.is_none()
+                    !flight.home_run
                         && flight.returning.is_none()
                         && flight.ground_contact.is_none()
                         && flight.velocity.y < 0.0
@@ -451,10 +446,13 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: PreviewTiming) {
             }
             if let Some(returning) = flight.returning {
                 if returning.airborne() {
-                    throw_marker = Some(project(&follow, flight.position));
+                    ball_marker = visible_ball(&follow, flight.position).map(|p| (p, SKYBLUE));
                 }
             } else {
                 batted_ball_shadow(flight.position);
+                if flight.confident {
+                    ball_marker = visible_ball(&follow, flight.position).map(|p| (p, GOLD));
+                }
                 let trail_step = flight.elapsed.min(0.13) / 7.0;
                 let trail_length = if flight.ground_contact.is_some() {
                     0
@@ -514,10 +512,16 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: PreviewTiming) {
         }
     }
     set_default_camera();
-    if let Some(point) = throw_marker {
+    if let Some((point, color)) = ball_marker {
         let scale = marker_scale(screen_width(), screen_height());
+        draw_circle(
+            point.x,
+            point.y,
+            5.0 * scale,
+            Color::new(0.08, 0.17, 0.19, 0.8),
+        );
         draw_circle(point.x, point.y, 3.0 * scale, WHITE);
-        draw_circle_lines(point.x, point.y, 6.0 * scale, 1.4 * scale, SKYBLUE);
+        draw_circle_lines(point.x, point.y, 7.0 * scale, 1.6 * scale, color);
     }
     match &play.phase {
         Phase::Pitch => {
