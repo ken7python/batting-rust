@@ -129,19 +129,22 @@ fn batted_ball_result(outcome: Outcome, grade: Option<Grade>, flight: &Flight) -
     let fielder = outcome
         .fielder()
         .or(flight.returning.map(|returning| returning.fielder));
-    let fielding = (fielder.is_some() || flight.ground_contact.is_some()).then(|| {
-        let mut defense = flight.defense;
-        defense.chasing = fielder;
-        FieldingView {
-            defense,
-            returning: flight.returning,
-            ball: flight.position,
-            velocity: flight.velocity,
-            elapsed: flight.elapsed,
-            runner: flight.runner,
-            ground_contact: flight.ground_contact,
-        }
-    });
+    let fielding = (fielder.is_some()
+        || flight.ground_contact.is_some()
+        || outcome == Outcome::Homer)
+        .then(|| {
+            let mut defense = flight.defense;
+            defense.chasing = fielder;
+            FieldingView {
+                defense,
+                returning: flight.returning,
+                ball: flight.position,
+                velocity: flight.velocity,
+                elapsed: flight.elapsed,
+                runner: flight.runner,
+                ground_contact: flight.ground_contact,
+            }
+        });
     ResultCard {
         outcome,
         grade,
