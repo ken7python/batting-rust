@@ -81,6 +81,8 @@ impl Play {
                 if let Some(hit) = evaluated.filter(|g| !bounced && g.contact != Contact::Miss) {
                     self.contact = Some(hit);
                     let mut flight = Flight::new(self.pitch.crossing, hit, self.park);
+                    // Only this subset may take an extra base on a marginal forecast.
+                    flight.try_close_advance = rand::gen_range(0, 5) == 0;
                     self.phase = match flight.advance(self.time - self.pitch.duration) {
                         Some(outcome) => {
                             Phase::Result(batted_ball_result(outcome, self.contact, &flight))
