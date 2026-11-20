@@ -270,7 +270,7 @@ async fn game() {
             let was_winding_up = was_pitched && session.play.time < 0.0;
             let was_resolved = matches!(session.play.phase, Phase::Result(_));
             let fence_was_cleared =
-                matches!(&session.play.phase, Phase::Flight(flight) if flight.cleared_fence);
+                matches!(&session.play.phase, Phase::Flight(flight) if flight.home_run.is_some());
             let was_fielded =
                 matches!(&session.play.phase, Phase::Flight(flight) if flight.returning.is_some());
             let was_thrown = matches!(&session.play.phase, Phase::Flight(flight)
@@ -284,7 +284,7 @@ async fn game() {
                     if was_pitched {
                         sounds.contact(flight.strong);
                     }
-                    if flight.cleared_fence && !fence_was_cleared {
+                    if flight.home_run.is_some() && !fence_was_cleared {
                         sounds.result(Outcome::Homer);
                     }
                     if let Some(returning) = flight.returning {
@@ -406,7 +406,7 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: bool) {
                 .defense
                 .chasing
                 .filter(|&fielder| {
-                    !flight.cleared_fence
+                    flight.home_run.is_none()
                         && flight.returning.is_none()
                         && flight.ground_contact.is_none()
                         && flight.velocity.y < 0.0
@@ -424,7 +424,7 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: bool) {
                 flight.returning.as_ref(),
                 catch,
             );
-            if !flight.cleared_fence {
+            if flight.home_run.is_none() {
                 batter_runner(&flight.runner, flight.elapsed, true);
             }
             if let Some(contact) = flight.ground_contact {
@@ -445,11 +445,13 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: bool) {
                 for i in 0..trail_length {
                     let start = flight.position - flight.velocity * (i as f32 * trail_step);
                     let end = start - flight.velocity * trail_step;
-                    draw_line_3d(
-                        start,
-                        end,
-                        Color::new(1.0, 0.88, 0.58, 0.9 - i as f32 * 0.11),
-                    );
+                    let alpha = 0.9 - i as f32 * 0.11;
+                    let color = if flight.home_run.is_some_and(flight::HomeRun::is_big) {
+                        Color::new(1.0, 0.73, 0.25, alpha)
+                    } else {
+                        Color::new(1.0, 0.88, 0.58, alpha)
+                    };
+                    draw_line_3d(start, end, color);
                 }
             }
             ball(flight.position);
