@@ -8,6 +8,7 @@ use crate::flight::GroundContact;
 use crate::park::Park;
 use crate::pitch::{Delivery, PitchForm};
 use crate::runner::{Runner, SLIDE_SECONDS};
+use crate::stands::Stands;
 
 pub const MOUND: Vec3 = vec3(0.0, 0.0, -17.0);
 const GRASS: Color = Color::from_rgba(49, 104, 74, 255);
@@ -181,28 +182,20 @@ fn line_on_ground(a: Vec3, b: Vec3, width: f32, color: Color) {
     flat_quad([a + normal, a - normal, b - normal, b + normal], color);
 }
 
-pub fn field(park: Park) {
+pub fn field(park: Park, stands: &Stands) {
     let (fence_radius, fence_height) = park.fence();
-    let (sky, grass, stripes, wall, seats) = match park {
+    let (sky, grass, stripes, wall) = match park {
         Park::Central => (
             Color::from_rgba(147, 198, 218, 255),
             GRASS,
             Color::from_rgba(56, 116, 80, 255),
             FENCE,
-            [
-                Color::from_rgba(68, 100, 113, 255),
-                Color::from_rgba(75, 109, 120, 255),
-            ],
         ),
         Park::Sunset => (
             Color::from_rgba(228, 165, 128, 255),
             Color::from_rgba(55, 100, 73, 255),
             Color::from_rgba(65, 114, 79, 255),
             Color::from_rgba(44, 51, 82, 255),
-            [
-                Color::from_rgba(89, 74, 105, 255),
-                Color::from_rgba(103, 85, 114, 255),
-            ],
         ),
     };
     clear_background(sky);
@@ -283,17 +276,8 @@ pub fn field(park: Park) {
         let band = top - Vec3::Y * 0.17;
         flat_quad([a, b, b + band, a + band], wall);
         flat_quad([a + band, b + band, b + top, a + top], GOLD);
-        let back = |p: Vec3| p * 1.07 - Vec3::Y;
-        flat_quad(
-            [
-                back(a),
-                back(b),
-                back(b) + Vec3::Y * 8.0,
-                back(a) + Vec3::Y * 8.0,
-            ],
-            seats[i % 2],
-        );
     }
+    stands.draw(park);
 }
 
 pub fn batter_runner(runner: &Runner, time: f32, active: bool) {
