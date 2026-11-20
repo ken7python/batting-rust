@@ -60,24 +60,31 @@ jobs:
           cargo test --locked --all-targets
           if ($LASTEXITCODE -ne 0) { throw 'Tests failed' }
           ./scripts/build-windows.ps1
-          $Game = Start-Process -FilePath ./dist/windows/Batting.exe -PassThru
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: dist/windows/*.zip
+          if-no-files-found: error
+      - name: Verify Windows startup
+        shell: pwsh
+        run: |
+          $Stderr = Join-Path $env:RUNNER_TEMP 'batting-stderr.txt'
+          $Game = Start-Process -FilePath ./dist/windows/Batting.exe -RedirectStandardError $Stderr -PassThru
           try {
               $deadline = [DateTime]::UtcNow.AddSeconds(15)
               do {
                   Start-Sleep -Milliseconds 250
                   $Game.Refresh()
-                  if ($Game.HasExited) { throw "Batting quit during startup ($($Game.ExitCode))" }
+                  if ($Game.HasExited) {
+                      Get-Content $Stderr
+                      throw "Batting quit during startup ($($Game.ExitCode))"
+                  }
               } until ($Game.MainWindowHandle -ne 0 -or [DateTime]::UtcNow -gt $deadline)
               if ($Game.MainWindowHandle -eq 0) { throw 'Batting did not open a window' }
           }
           finally {
               if (!$Game.HasExited) { Stop-Process -Id $Game.Id }
           }
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows-x64
-          path: dist/windows/*.zip
-          if-no-files-found: error
 
   ios:
     runs-on: macos-15
@@ -90,17 +97,20 @@ jobs:
           ./build.sh ios-sim
           BATTING_IOS_UNSIGNED=1 ./build.sh ios-device
           /usr/libexec/PlistBuddy -c 'Print :UIDeviceFamily' dist/ios/sim/Batting.app/Info.plist
-          lipo -verify_arch arm64 dist/ios/sim/Batting.app/Batting
-          lipo -verify_arch arm64 dist/ios/device/Batting.app/Batting
+          test "$(lipo -archs dist/ios/sim/Batting.app/Batting)" = arm64
+          test "$(lipo -archs dist/ios/device/Batting.app/Batting)" = arm64
           ditto -c -k --keepParent dist/ios/sim/Batting.app dist/ios/batting-ios-simulator.zip
-      - run: ./scripts/smoke-ios.sh
       - uses: actions/upload-artifact@v4
         with:
           name: ios-simulator
-          path: |
-            dist/ios/batting-ios-simulator.zip
-            dist/ios/*.png
+          path: dist/ios/batting-ios-simulator.zip
           if-no-files-found: error
+      - run: ./scripts/smoke-ios.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-simulator-screenshots
+          path: dist/ios/*.png
 
   android:
     runs-on: ubuntu-24.04
@@ -110,6 +120,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+      - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
@@ -117,13 +128,16 @@ jobs:
           rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --target x86_64-linux-android --target aarch64-linux-android
           sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;30.0.16248370' emulator 'system-images;android-35;google_apis;x86_64'
           ./build.sh android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-debug
+          path: dist/android/batting-debug.apk
+          if-no-files-found: error
       - run: |
           sudo chmod a+rw /dev/kvm
           ./scripts/smoke-android.sh
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: android-debug
-          path: |
-            dist/android/batting-debug.apk
-            dist/android/*.png
-          if-no-files-found: error
+          name: android-emulator-screenshots
+          path: dist/android/*.png
