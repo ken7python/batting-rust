@@ -28,7 +28,7 @@ const NATIVE_TOUCH: bool = cfg!(any(target_os = "ios", target_os = "android"));
 enum Screen {
     Menu,
     Game(Box<Session>),
-    Summary(Record),
+    Summary(Box<Record>),
 }
 
 #[derive(Default)]
@@ -225,7 +225,9 @@ async fn game() {
             if input.lost {
                 session.pause();
             } else if is_key_pressed(KeyCode::Escape) {
-                if session.paused {
+                if session.history_open {
+                    session.history_open = false;
+                } else if session.paused {
                     session.paused = false;
                 } else {
                     session.pause();
@@ -311,7 +313,7 @@ async fn game() {
                 }
             }
             if let Some(record) = summary {
-                screen = Screen::Summary(record);
+                screen = Screen::Summary(Box::new(record));
             }
         }
         input.lost = false;
@@ -330,7 +332,7 @@ async fn game() {
             }
             Screen::Summary(record) => {
                 draw_idle(&camera, settings.delivery, settings.park);
-                ui.summary(*record)
+                ui.summary(record)
             }
         };
 
@@ -367,12 +369,16 @@ async fn game() {
                 | Action::Music
                 | Action::Effects
                 | Action::BreakSize => settings.change(action),
-                Action::Pause | Action::Resume => {
+                Action::Pause | Action::Resume | Action::History => {
                     if let Screen::Game(run) = &mut screen {
-                        if matches!(action, Action::Pause) {
-                            run.pause();
-                        } else {
-                            run.paused = false;
+                        match action {
+                            Action::Pause => run.pause(),
+                            Action::Resume => {
+                                run.paused = false;
+                                run.history_open = false;
+                            }
+                            Action::History => run.history_open = !run.history_open,
+                            _ => unreachable!(),
                         }
                     }
                 }

@@ -7,6 +7,14 @@ pub const CHALLENGE_LENGTH: u32 = 10;
 const RESULT_SECONDS: f64 = 1.45;
 
 #[derive(Clone, Copy)]
+pub struct AtBat {
+    pub pitch: PitchKind,
+    pub speed: f64,
+    pub outcome: Outcome,
+    pub distance: Option<f32>,
+}
+
+#[derive(Clone, Copy)]
 pub enum Mode {
     Challenge,
     Practice { kind: Option<PitchKind> },
@@ -35,16 +43,25 @@ pub struct Record {
     pub home_runs: u32,
     pub doubles: u32,
     pub triples: u32,
+    history: [Option<AtBat>; CHALLENGE_LENGTH as usize],
 }
 
 impl Record {
-    fn record(&mut self, outcome: Outcome) {
+    fn record(&mut self, at_bat: AtBat) {
+        self.history[self.completed as usize % self.history.len()] = Some(at_bat);
         self.completed += 1;
+        let outcome = at_bat.outcome;
         self.points += outcome.points();
         self.fair += u32::from(outcome.is_hit());
         self.home_runs += u32::from(outcome == Outcome::Homer);
         self.doubles += u32::from(outcome == Outcome::Double);
         self.triples += u32::from(outcome == Outcome::Triple);
+    }
+
+    pub fn history(&self) -> impl Iterator<Item = (u32, AtBat)> + '_ {
+        (self.completed.saturating_sub(CHALLENGE_LENGTH)..self.completed).filter_map(|index| {
+            self.history[index as usize % self.history.len()].map(|entry| (index + 1, entry))
+        })
     }
 }
 
@@ -54,6 +71,7 @@ pub struct Session {
     pub record: Record,
     pub play: Play,
     pub paused: bool,
+    pub history_open: bool,
     mix: PitchMix,
 }
 
@@ -71,6 +89,7 @@ impl Session {
             record: Record::default(),
             play: Play::new(mode.next_pitch(0, delivery, speed, mix), park),
             paused: false,
+            history_open: false,
             mix,
         }
     }
@@ -89,7 +108,14 @@ impl Session {
         if let Phase::Result(card) = &self.play.phase
             && !was_resolved
         {
-            self.record.record(card.outcome);
+            self.record.record(AtBat {
+                pitch: self.play.pitch.kind,
+                speed: self.play.pitch.average_kmh(),
+                outcome: card.outcome,
+                distance: card
+                    .landing
+                    .map(|point| (point.x * point.x + point.z * point.z).sqrt()),
+            });
         }
         let result_seconds = match &self.play.phase {
             Phase::Result(card) if card.outcome == Outcome::Homer => 2.05,
@@ -166,6 +192,19 @@ mod tests {
         assert_eq!(result.completed, 10);
         assert_eq!(result.fair, 0);
         assert_eq!(result.home_runs, 0);
+        let entries: Vec<_> = result.history().collect();
+        assert_eq!(entries.len(), CHALLENGE_LENGTH as usize);
+        assert_eq!(
+            entries
+                .iter()
+                .map(|(number, _)| *number)
+                .collect::<Vec<_>>(),
+            (1..=CHALLENGE_LENGTH).collect::<Vec<_>>()
+        );
+        assert_eq!(entries[0].1.pitch, PitchKind::Fastball);
+        assert!(entries.iter().all(|(_, entry)| {
+            matches!(entry.outcome, Outcome::Strike | Outcome::Ball) && entry.distance.is_none()
+        }));
     }
 
     #[test]
@@ -196,6 +235,12 @@ mod tests {
             assert_eq!(run.play.pitch.delivery, delivery);
         }
         assert!(run.record.completed > 10);
+        let numbers: Vec<_> = run.record.history().map(|(number, _)| number).collect();
+        assert_eq!(
+            numbers,
+            ((run.record.completed - CHALLENGE_LENGTH + 1)..=run.record.completed)
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -214,7 +259,12 @@ mod tests {
             Outcome::FlyOut(crate::defense::Fielder::Center),
             Outcome::GroundOut(crate::defense::Fielder::First),
         ] {
-            record.record(outcome);
+            record.record(AtBat {
+                pitch: PitchKind::Fastball,
+                speed: 105.0,
+                outcome,
+                distance: None,
+            });
         }
         assert_eq!(
             (

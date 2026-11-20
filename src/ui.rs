@@ -44,6 +44,7 @@ pub enum Action {
     Effects,
     Pause,
     Resume,
+    History,
     Menu,
 }
 
@@ -535,9 +536,13 @@ impl<'a> Ui<'a> {
                 screen_height(),
                 Color::new(0.04, 0.10, 0.11, 0.63),
             );
+            if session.history_open {
+                return self
+                    .paused_history(&session.record, matches!(session.mode, Mode::Challenge));
+            }
             let x = self.area.center().x - 160.0 * s;
-            let y = self.area.center().y - 109.0 * s;
-            self.panel(Rect::new(x, y, 320.0 * s, 218.0 * s));
+            let y = self.area.center().y - 137.0 * s;
+            self.panel(Rect::new(x, y, 320.0 * s, 274.0 * s));
             self.text("一時停止", x + 22.0 * s, y + 49.0 * s, 32.0, CREAM);
             if self.button(
                 Rect::new(x + 22.0 * s, y + 78.0 * s, 276.0 * s, 47.0 * s),
@@ -548,6 +553,13 @@ impl<'a> Ui<'a> {
             }
             if self.button(
                 Rect::new(x + 22.0 * s, y + 142.0 * s, 276.0 * s, 47.0 * s),
+                "打席一覧",
+                false,
+            ) {
+                action = Some(Action::History);
+            }
+            if self.button(
+                Rect::new(x + 22.0 * s, y + 206.0 * s, 276.0 * s, 47.0 * s),
                 "タイトルへ",
                 false,
             ) {
@@ -737,47 +749,124 @@ impl<'a> Ui<'a> {
         }
     }
 
-    pub fn summary(&mut self, record: Record) -> Option<Action> {
+    fn history_table(&mut self, record: &Record, x: f32, y: f32, show_points: bool) {
         let s = self.scale;
-        let x = self.area.center().x - 195.0 * s;
-        let y = self.area.center().y - 192.5 * s;
-        self.panel(Rect::new(x, y, 390.0 * s, 385.0 * s));
-        self.fill(x, y, 390.0 * s, 4.0 * s, AMBER);
+        let width = 676.0 * s;
+        self.fill(x, y, width, 31.0 * s, Color::from_rgba(25, 62, 62, 255));
+        for (offset, label) in [
+            (12.0, "打席"),
+            (73.0, "球種"),
+            (221.0, "球速"),
+            (337.0, "結果"),
+            (505.0, "飛距離"),
+            (606.0, "得点"),
+        ] {
+            if show_points || label != "得点" {
+                self.text(label, x + offset * s, y + 21.0 * s, 15.0, MUTED);
+            }
+        }
+        if record.completed == 0 {
+            self.centered_text(
+                "まだ結果はありません",
+                x + width * 0.5,
+                y + 102.0 * s,
+                20.0,
+                MUTED,
+            );
+        }
+        for (row, (number, entry)) in record.history().enumerate() {
+            let top = y + (34.0 + row as f32 * 33.0) * s;
+            let background = if row % 2 == 0 {
+                Color::from_rgba(29, 59, 58, 255)
+            } else {
+                INK
+            };
+            self.fill(x, top, width, 30.0 * s, background);
+            let baseline = top + 21.0 * s;
+            self.text(&format!("{number:02}"), x + 12.0 * s, baseline, 16.0, MUTED);
+            self.text(entry.pitch.label(), x + 73.0 * s, baseline, 17.0, CREAM);
+            self.text(
+                &format!("{:.0} km/h", entry.speed),
+                x + 221.0 * s,
+                baseline,
+                16.0,
+                CREAM,
+            );
+            let color = hit_accent(entry.outcome).unwrap_or(CREAM);
+            if entry.outcome.is_hit() {
+                self.fill(x, top, 3.0 * s, 30.0 * s, color);
+            }
+            self.text(entry.outcome.label(), x + 337.0 * s, baseline, 17.0, color);
+            let distance = entry
+                .distance
+                .map_or_else(|| "-".into(), |distance| format!("{distance:.0} m"));
+            self.text(&distance, x + 505.0 * s, baseline, 16.0, MUTED);
+            if show_points {
+                self.text(
+                    &entry.outcome.points().to_string(),
+                    x + 606.0 * s,
+                    baseline,
+                    16.0,
+                    color,
+                );
+            }
+        }
+    }
+
+    fn paused_history(&mut self, record: &Record, show_points: bool) -> Option<Action> {
+        let s = self.scale;
+        let x = self.area.center().x - 360.0 * s;
+        let y = self.area.center().y - 256.0 * s;
+        self.panel(Rect::new(x, y, 720.0 * s, 512.0 * s));
+        self.fill(x, y, 720.0 * s, 4.0 * s, AMBER);
+        self.text("打席一覧", x + 22.0 * s, y + 43.0 * s, 28.0, CREAM);
+        self.history_table(record, x + 22.0 * s, y + 64.0 * s, show_points);
+        self.button(
+            Rect::new(x + 22.0 * s, y + 449.0 * s, 676.0 * s, 42.0 * s),
+            "戻る",
+            true,
+        )
+        .then_some(Action::History)
+    }
+
+    pub fn summary(&mut self, record: &Record) -> Option<Action> {
+        let s = self.scale;
+        let x = self.area.center().x - 360.0 * s;
+        let y = self.area.center().y - 282.0 * s;
+        self.panel(Rect::new(x, y, 720.0 * s, 564.0 * s));
+        self.fill(x, y, 720.0 * s, 4.0 * s, AMBER);
         self.text(
             "10球チャレンジ結果",
-            x + 23.0 * s,
-            y + 50.0 * s,
-            26.0,
+            x + 22.0 * s,
+            y + 48.0 * s,
+            29.0,
             CREAM,
         );
-        self.text(
+        self.centered_text(
             &format!("{} 点", record.points),
-            x + 20.0 * s,
-            y + 126.0 * s,
-            57.0,
+            x + 595.0 * s,
+            y + 55.0 * s,
+            40.0,
             AMBER,
         );
         self.text(
-            &format!("安打  {}    本塁打  {}", record.fair, record.home_runs),
-            x + 23.0 * s,
-            y + 189.0 * s,
-            21.0,
-            MUTED,
-        );
-        self.text(
-            &format!("二塁打  {}    三塁打  {}", record.doubles, record.triples),
-            x + 23.0 * s,
-            y + 216.0 * s,
+            &format!(
+                "安打  {}    二塁打  {}    三塁打  {}    本塁打  {}",
+                record.fair, record.doubles, record.triples, record.home_runs
+            ),
+            x + 22.0 * s,
+            y + 83.0 * s,
             18.0,
             MUTED,
         );
+        self.history_table(record, x + 22.0 * s, y + 103.0 * s, true);
         let replay = self.button(
-            Rect::new(x + 23.0 * s, y + 232.0 * s, 344.0 * s, 49.0 * s),
+            Rect::new(x + 22.0 * s, y + 500.0 * s, 329.0 * s, 44.0 * s),
             "もう一度",
             true,
         );
         let menu = self.button(
-            Rect::new(x + 23.0 * s, y + 302.0 * s, 344.0 * s, 49.0 * s),
+            Rect::new(x + 369.0 * s, y + 500.0 * s, 329.0 * s, 44.0 * s),
             "タイトルへ",
             false,
         );
