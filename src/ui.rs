@@ -419,39 +419,54 @@ impl<'a> Ui<'a> {
         )
     }
 
+    fn corner_panel_scale(&self) -> f32 {
+        if self.display.mobile() && self.area.w > self.area.h && self.area.w < 720.0 {
+            self.scale.min(self.area.w / 890.0)
+        } else {
+            self.scale
+        }
+    }
+
     pub fn game(&mut self, session: &Session) -> Option<Action> {
         let s = self.scale;
         let x = self.area.x + 20.0 * s;
-        let y = self.area.y + 20.0 * s;
         let mut action = None;
-        let shown_pitch =
-            session.record.completed + u32::from(!matches!(session.play.phase, Phase::Result(_)));
-        let (mode, count) = match session.mode {
-            Mode::Challenge => (
-                "10球チャレンジ",
-                format!("{shown_pitch:02} / {CHALLENGE_LENGTH:02}"),
-            ),
-            Mode::Practice { .. } => ("練習", format!("{shown_pitch:02} 球")),
-        };
-        self.panel(Rect::new(x, y, 276.0 * s, 81.0 * s));
-        self.text(mode, x + 14.0 * s, y + 25.0 * s, 16.0, MUTED);
-        self.text(
-            &format!("球速  {}", session.speed.label()),
-            x + 154.0 * s,
-            y + 25.0 * s,
-            16.0,
-            MUTED,
-        );
-        self.text(&count, x + 14.0 * s, y + 62.0 * s, 27.0, CREAM);
-        if matches!(session.mode, Mode::Challenge) {
+        let corner_scale = self.corner_panel_scale();
+        self.scale = corner_scale;
+        {
+            let s = corner_scale;
+            let x = self.area.x + 20.0 * s;
+            let y = self.area.y + 20.0 * s;
+            let shown_pitch = session.record.completed
+                + u32::from(!matches!(session.play.phase, Phase::Result(_)));
+            let (mode, count) = match session.mode {
+                Mode::Challenge => (
+                    "10球チャレンジ",
+                    format!("{shown_pitch:02} / {CHALLENGE_LENGTH:02}"),
+                ),
+                Mode::Practice { .. } => ("練習", format!("{shown_pitch:02} 球")),
+            };
+            self.panel(Rect::new(x, y, 276.0 * s, 81.0 * s));
+            self.text(mode, x + 14.0 * s, y + 25.0 * s, 16.0, MUTED);
             self.text(
-                &format!("{} 点", session.record.points),
+                &format!("球速  {}", session.speed.label()),
                 x + 154.0 * s,
-                y + 62.0 * s,
-                27.0,
-                AMBER,
+                y + 25.0 * s,
+                16.0,
+                MUTED,
             );
+            self.text(&count, x + 14.0 * s, y + 62.0 * s, 27.0, CREAM);
+            if matches!(session.mode, Mode::Challenge) {
+                self.text(
+                    &format!("{} 点", session.record.points),
+                    x + 154.0 * s,
+                    y + 62.0 * s,
+                    27.0,
+                    AMBER,
+                );
+            }
         }
+        self.scale = s;
         if !session.paused && self.button(self.pause_rect(), "一時停止", false) {
             action = Some(Action::Pause);
         }
@@ -551,8 +566,22 @@ impl<'a> Ui<'a> {
                 "左ボタンを押してドラッグ"
             };
             let h = self.area.bottom();
-            self.panel(Rect::new(x, h - 59.0 * s, 270.0 * s, 40.0 * s));
-            self.text(hint, x + 13.0 * s, h - 32.0 * s, 17.0, CREAM);
+            self.scale = corner_scale;
+            let x = self.area.x + 20.0 * corner_scale;
+            self.panel(Rect::new(
+                x,
+                h - 59.0 * corner_scale,
+                270.0 * corner_scale,
+                40.0 * corner_scale,
+            ));
+            self.text(
+                hint,
+                x + 13.0 * corner_scale,
+                h - 32.0 * corner_scale,
+                17.0,
+                CREAM,
+            );
+            self.scale = s;
         }
 
         if session.paused {
