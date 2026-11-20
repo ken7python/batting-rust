@@ -2,7 +2,7 @@ use macroquad::prelude::*;
 
 use crate::batting::{Aim, Contact, Grade, WINDUP, grade, in_zone};
 use crate::defense::{Defense, FieldReturn};
-use crate::flight::{Flight, Outcome};
+use crate::flight::{Flight, GroundContact, Outcome};
 use crate::park::Park;
 use crate::pitch::Pitch;
 use crate::runner::Runner;
@@ -21,6 +21,7 @@ pub struct FieldingView {
     pub velocity: Vec3,
     pub elapsed: f32,
     pub runner: Runner,
+    pub ground_contact: Option<GroundContact>,
 }
 
 pub enum Phase {
@@ -124,9 +125,9 @@ fn batted_ball_result(outcome: Outcome, grade: Option<Grade>, flight: &Flight) -
     let fielder = outcome
         .fielder()
         .or(flight.returning.map(|returning| returning.fielder));
-    let fielding = fielder.map(|fielder| {
+    let fielding = (fielder.is_some() || flight.ground_contact.is_some()).then(|| {
         let mut defense = flight.defense;
-        defense.chasing = Some(fielder);
+        defense.chasing = fielder;
         FieldingView {
             defense,
             returning: flight.returning,
@@ -134,6 +135,7 @@ fn batted_ball_result(outcome: Outcome, grade: Option<Grade>, flight: &Flight) -
             velocity: flight.velocity,
             elapsed: flight.elapsed,
             runner: flight.runner,
+            ground_contact: flight.ground_contact,
         }
     });
     ResultCard {

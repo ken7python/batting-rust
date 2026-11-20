@@ -1,6 +1,7 @@
 use macroquad::prelude::*;
 
 use crate::batting::{BARREL_RADIUS, BARREL_TIMING, Grade};
+use crate::flight::Outcome;
 use crate::park::Park;
 use crate::pitch::{Delivery, PitchForm, PitchKind, PitchMix, PitchSpeed, ThrowingHand};
 use crate::play::{Phase, ResultCard};
@@ -13,6 +14,7 @@ const LINE: Color = Color::from_rgba(74, 108, 98, 255);
 const CREAM: Color = Color::from_rgba(245, 241, 219, 255);
 const MUTED: Color = Color::from_rgba(179, 199, 183, 255);
 const AMBER: Color = Color::from_rgba(255, 201, 95, 255);
+const AIM_CALL_COLOR: Color = Color::from_rgba(161, 236, 154, 255);
 
 #[derive(Clone, Copy)]
 pub enum Action {
@@ -388,6 +390,15 @@ impl<'a> Ui<'a> {
         }
         if let Phase::Result(card) = &session.play.phase {
             self.feedback(session, card);
+            if session.play.result_time < 0.9 {
+                match card.outcome {
+                    Outcome::Foul => self.field_call("ファール", AMBER),
+                    Outcome::FlyOut(_) | Outcome::GroundOut(_) => {
+                        self.field_call("アウト", Color::from_rgba(255, 151, 126, 255));
+                    }
+                    _ => {}
+                }
+            }
             if let Some(view) = &card.fielding
                 && view.returning.is_some()
             {
@@ -430,6 +441,12 @@ impl<'a> Ui<'a> {
             self.text(&detail, x + 13.0 * s, h - 30.0 * s, 26.0, CREAM);
             if !flight.cleared_fence {
                 self.runner_diamond(&flight.runner, !session.paused && flight.can_boost_runner());
+            }
+            if flight
+                .ground_contact
+                .is_some_and(|contact| flight.elapsed - contact.at < 0.8)
+            {
+                self.field_call("フェア", AIM_CALL_COLOR);
             }
         } else if matches!(session.play.phase, Phase::Pitch) {
             let hint = if session.play.time < 0.0 {
@@ -478,6 +495,18 @@ impl<'a> Ui<'a> {
             }
         }
         action
+    }
+
+    fn field_call(&mut self, label: &str, color: Color) {
+        let s = self.scale;
+        let center = screen_width() * 0.5;
+        let width = 145.0 * s;
+        let x = center - width * 0.5;
+        self.panel(Rect::new(x, 23.0 * s, width, 46.0 * s));
+        self.fill(x, 23.0 * s, width, 3.0 * s, color);
+        let size = 24.0;
+        let measured = measure_text(label, Some(self.font), (size * s).round() as u16, 1.0);
+        self.text(label, center - measured.width * 0.5, 55.0 * s, size, color);
     }
 
     fn runner_diamond(&mut self, runner: &Runner, can_boost: bool) {

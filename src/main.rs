@@ -284,7 +284,7 @@ async fn main() {
 fn draw_idle(camera: &Camera3D, delivery: Delivery, park: Park) {
     set_camera(camera);
     field(park);
-    fielders(&Defense::new(park), 0.0, None);
+    fielders(&Defense::new(park), 0.0, None, None);
     pitcher(-batting::WINDUP, delivery);
     set_default_camera();
 }
@@ -299,17 +299,47 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: bool) {
             );
             set_camera(&follow);
             field(play.park);
-            fielders(&flight.defense, flight.elapsed, flight.returning.as_ref());
+            let catch = flight
+                .defense
+                .chasing
+                .filter(|&fielder| {
+                    !flight.cleared_fence
+                        && flight.returning.is_none()
+                        && flight.ground_contact.is_none()
+                        && flight.velocity.y < 0.0
+                        && (0.45..=2.65).contains(&flight.position.y)
+                        && flight
+                            .defense
+                            .position(fielder)
+                            .distance(flight.position.xz())
+                            < 1.25
+                })
+                .map(|fielder| (fielder, flight.position));
+            fielders(
+                &flight.defense,
+                flight.elapsed,
+                flight.returning.as_ref(),
+                catch,
+            );
             if !flight.cleared_fence {
                 batter_runner(&flight.runner, flight.elapsed, true);
+            }
+            if let Some(contact) = flight.ground_contact {
+                ground_impact(contact, flight.elapsed);
             }
             if let Some(returning) = flight.returning {
                 if returning.airborne() {
                     throw_marker = Some(project(&follow, flight.position));
                 }
             } else {
+                batted_ball_shadow(flight.position);
                 let trail_step = flight.elapsed.min(0.13) / 7.0;
-                for i in 0..7 {
+                let trail_length = if flight.ground_contact.is_some() {
+                    0
+                } else {
+                    7
+                };
+                for i in 0..trail_length {
                     let start = flight.position - flight.velocity * (i as f32 * trail_step);
                     let end = start - flight.velocity * trail_step;
                     draw_line_3d(
@@ -323,6 +353,7 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: bool) {
         }
         Phase::Result(ResultCard {
             fielding: Some(view),
+            outcome,
             ..
         }) => {
             let follow = view.returning.as_ref().map_or_else(
@@ -331,14 +362,26 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: bool) {
             );
             set_camera(&follow);
             field(play.park);
-            fielders(&view.defense, view.elapsed, view.returning.as_ref());
-            batter_runner(&view.runner, view.elapsed, false);
+            let catch = match *outcome {
+                Outcome::FlyOut(fielder) => Some((fielder, view.ball)),
+                _ => None,
+            };
+            fielders(&view.defense, view.elapsed, view.returning.as_ref(), catch);
+            if *outcome != Outcome::Foul {
+                batter_runner(&view.runner, view.elapsed, false);
+            }
+            if let Some(contact) = view.ground_contact {
+                ground_impact(contact, view.elapsed + play.result_time as f32);
+                if view.returning.is_none() {
+                    batted_ball_shadow(view.ball);
+                }
+            }
             ball(view.ball);
         }
         _ => {
             set_camera(camera);
             field(play.park);
-            fielders(&Defense::new(play.park), 0.0, None);
+            fielders(&Defense::new(play.park), 0.0, None, None);
             pitcher(play.time, play.pitch.delivery);
             bat(play.time, &play.aim);
             if matches!(play.phase, Phase::Pitch) && play.time >= 0.0 {

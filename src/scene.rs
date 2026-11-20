@@ -3,6 +3,7 @@ use macroquad::prelude::*;
 
 use crate::batting::*;
 use crate::defense::{Defense, FIRST_BASE, FieldReturn, Fielder, SECOND_BASE, THIRD_BASE};
+use crate::flight::GroundContact;
 use crate::park::Park;
 use crate::pitch::{Delivery, PitchForm};
 use crate::runner::Runner;
@@ -228,16 +229,25 @@ pub fn batter_runner(runner: &Runner, time: f32, active: bool) {
     }
 }
 
-pub fn fielders(defense: &Defense, time: f32, returning: Option<&FieldReturn>) {
+pub fn fielders(
+    defense: &Defense,
+    time: f32,
+    returning: Option<&FieldReturn>,
+    catch: Option<(Fielder, Vec3)>,
+) {
     let jersey = Color::from_rgba(52, 113, 201, 255);
     let skin = Color::from_rgba(216, 165, 118, 255);
     for (role, point) in Fielder::ALL.into_iter().zip(defense.positions) {
-        let feet = vec3(point.x, 0.0, point.y);
+        let catching = catch
+            .filter(|(fielder, _)| *fielder == role)
+            .map(|(_, ball)| ball);
+        let lift = catching.map_or(0.0, |ball| (ball.y - 1.79).clamp(0.0, 0.56));
+        let feet = vec3(point.x, lift, point.y);
         let chasing = defense.chasing == Some(role);
         let carrier = returning.is_some_and(|play| play.fielder == role);
         let receiving = returning.is_some_and(|play| play.receiver == role && !play.carrying());
         let running = returning.map_or(chasing, |play| role == play.receiver);
-        let step = if running {
+        let step = if running && catching.is_none() {
             (time * 23.0).sin() * 0.18
         } else {
             0.0
@@ -277,11 +287,29 @@ pub fn fielders(defense: &Defense, time: f32, returning: Option<&FieldReturn>) {
             let reach = -0.28 + progress * 0.58;
             glove = feet + vec3(toward.x * reach, 0.65 + progress, toward.y * reach);
         }
+        if let Some(ball) = catching {
+            let shoulder = feet + vec3(0.20, 1.35, 0.0);
+            glove = ball;
+            for joint in 1..=5 {
+                draw_cube(
+                    shoulder.lerp(glove, joint as f32 / 6.0),
+                    vec3(0.16, 0.16, 0.16),
+                    None,
+                    if joint <= 2 { jersey } else { skin },
+                );
+            }
+        }
         draw_cube(
             glove,
             vec3(0.25, 0.27, 0.21),
             None,
-            if chasing || receiving { GOLD } else { BROWN },
+            if catching.is_some() {
+                BROWN
+            } else if chasing || receiving {
+                GOLD
+            } else {
+                BROWN
+            },
         );
     }
 }
@@ -353,6 +381,66 @@ pub fn pitcher(time: f64, delivery: Delivery) {
 pub fn ball(p: Vec3) {
     draw_sphere(p, BALL_RADIUS * 1.25, None, WHITE);
     draw_sphere(p + vec3(0.008, 0.0, 0.044), 0.008, None, MAROON);
+}
+
+fn ground_ring(point: Vec3, inner: f32, outer: f32, color: Color) {
+    let segments = 16;
+    let mut vertices = Vec::with_capacity(2 * (segments + 1));
+    let mut indices = Vec::with_capacity(6 * segments);
+    for i in 0..=segments {
+        let angle = i as f32 * std::f32::consts::TAU / segments as f32;
+        let direction = vec3(angle.sin(), 0.0, angle.cos());
+        for radius in [inner, outer] {
+            let p = point + direction * radius;
+            vertices.push(Vertex::new(p.x, p.y, p.z, 0.0, 0.0, color));
+        }
+        if i > 0 {
+            let next = (2 * i) as u16;
+            indices.extend([next - 2, next - 1, next, next - 1, next + 1, next]);
+        }
+    }
+    draw_mesh(&Mesh {
+        vertices,
+        indices,
+        texture: None,
+    });
+}
+
+pub fn batted_ball_shadow(p: Vec3) {
+    let height = p.y.clamp(0.0, 12.0);
+    ground_ring(
+        vec3(p.x, 0.017, p.z),
+        0.0,
+        0.18 + 0.025 * height,
+        Color::new(0.07, 0.10, 0.07, 0.62 - 0.025 * height),
+    );
+}
+
+pub fn ground_impact(contact: GroundContact, elapsed: f32) {
+    let age = (elapsed - contact.at).max(0.0);
+    let life = age / 0.65;
+    if life >= 1.0 {
+        return;
+    }
+    let point = vec3(contact.position.x, 0.060, contact.position.z);
+    let radius = 0.24 + life * 1.25;
+    ground_ring(
+        point,
+        radius - 0.09,
+        radius,
+        Color::new(1.0, 0.86, 0.57, 0.94 * (1.0 - life)),
+    );
+    for i in 0..8 {
+        let angle = i as f32 * std::f32::consts::FRAC_PI_4;
+        let direction = vec3(angle.sin(), 0.0, angle.cos());
+        let height = life * (1.0 - life) * (1.1 + 0.3 * (i % 3) as f32);
+        draw_sphere(
+            point + direction * radius * 0.78 + Vec3::Y * height,
+            0.07 * (1.0 - life),
+            None,
+            Color::new(0.96, 0.82, 0.58, 1.0 - life),
+        );
+    }
 }
 
 pub fn bat(time: f64, aim: &Aim) {

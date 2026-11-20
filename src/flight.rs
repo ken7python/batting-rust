@@ -47,6 +47,12 @@ impl Outcome {
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct GroundContact {
+    pub position: Vec3,
+    pub at: f32,
+}
+
 pub struct Flight {
     pub position: Vec3,
     pub velocity: Vec3,
@@ -56,6 +62,7 @@ pub struct Flight {
     pub defense: Defense,
     pub returning: Option<FieldReturn>,
     pub runner: Runner,
+    pub ground_contact: Option<GroundContact>,
     park: Park,
     rolling: bool,
     hit_wall: bool,
@@ -91,6 +98,7 @@ impl Flight {
             defense: Defense::new(park),
             returning: None,
             runner: Runner::default(),
+            ground_contact: None,
             park,
             rolling: false,
             hit_wall: false,
@@ -200,6 +208,10 @@ impl Flight {
             if self.cleared_fence {
                 return Some(Outcome::Homer);
             }
+            self.ground_contact = Some(GroundContact {
+                position: point,
+                at: self.elapsed,
+            });
             if !fair(point) {
                 return Some(Outcome::Foul);
             }
@@ -388,6 +400,11 @@ mod tests {
             let outcome = (0..1000).find_map(|_| flight.advance(STEP));
             assert_eq!(outcome, Some(expected));
             if expected == Outcome::Fair {
+                let contact = flight
+                    .ground_contact
+                    .expect("a hit should record its first landing");
+                assert!((contact.position.y - BALL_RADIUS).abs() < 1e-5);
+                assert!(contact.position.xz().distance(flight.batted_point().xz()) > 1.0);
                 let returning = flight
                     .returning
                     .expect("the outfielder should return the ball");
@@ -395,6 +412,8 @@ mod tests {
                 assert_eq!(returning.target, crate::defense::SECOND_BASE);
                 assert!(flight.position.xz().abs_diff_eq(returning.target, 0.01));
                 assert!(flight.batted_point().xz().distance(returning.target) > 5.0);
+            } else {
+                assert!(flight.ground_contact.is_none());
             }
         }
     }
@@ -537,5 +556,27 @@ mod tests {
         let (result, point) = simulate(1.0 / 60.0, early, Park::Central);
         assert_eq!(result, Outcome::Foul);
         assert!(point.x < point.z);
+    }
+
+    #[test]
+    fn a_foul_landing_records_the_first_ground_contact_before_resolution() {
+        let mut flight = Flight::new(
+            CENTER,
+            Grade {
+                contact: Contact::Touch,
+                timing: -0.079,
+                offset: Vec2::ZERO,
+            },
+            Park::Central,
+        );
+        assert_eq!(
+            (0..900).find_map(|_| flight.advance(STEP)),
+            Some(Outcome::Foul)
+        );
+        let contact = flight
+            .ground_contact
+            .expect("a foul on the grass should mark its landing");
+        assert_eq!(contact.position, flight.position);
+        assert_eq!(contact.at, flight.elapsed);
     }
 }
