@@ -104,15 +104,14 @@ pub struct Flight {
 impl Flight {
     pub fn new(crossing: Vec2, grade: Grade, park: Park) -> Self {
         let strong = grade.contact == Contact::Barrel;
-        let quality = (1.0
-            - 0.65 * (grade.offset / MEET_RADIUS).length()
-            - 0.35 * (grade.timing.abs() / HIT_TIMING) as f32)
+        let aim_error = (grade.offset / MEET_RADIUS).length().min(1.0);
+        let quality = (1.0 - 0.65 * aim_error - 0.35 * (grade.timing.abs() / HIT_TIMING) as f32)
             .clamp(0.0, 1.0);
         let squared_quality = quality * quality;
         let speed = if strong {
-            35.0 + 23.0 * squared_quality
+            35.0 + 32.0 * squared_quality
         } else {
-            24.0 + 8.0 * squared_quality
+            24.0 + 8.0 * squared_quality - 7.0 * aim_error
         };
         let horizontal =
             ((grade.timing / HIT_TIMING) as f32 * 1.05 + grade.offset.x * 0.48).clamp(-1.18, 1.18);
@@ -489,6 +488,26 @@ mod tests {
         let below = flight(0.15);
         assert!(above.velocity.y > flight(0.0).velocity.y);
         assert!(below.velocity.y < 0.0);
+    }
+
+    #[test]
+    fn cursor_accuracy_changes_carry_at_the_same_swing_time() {
+        use crate::batting::{SWING_LEAD, Swing, grade};
+        for (error, expected_carry) in [(0.0, 200.0..215.0), (0.5, 39.0..45.0), (0.9, 25.0..31.0)] {
+            let swing = Swing {
+                time: 0.5 - SWING_LEAD,
+                aim: CENTER + Vec2::X * MEET_RADIUS.x * error,
+            };
+            let hit = grade(swing, 0.5, CENTER);
+            let flight = Flight::new(CENTER, hit, Park::Central);
+            let carry = airborne_landing(flight.position, flight.velocity)
+                .xz()
+                .length();
+            assert!(
+                expected_carry.contains(&carry),
+                "offset {error}, carry {carry} m"
+            );
+        }
     }
 
     #[test]
