@@ -308,11 +308,9 @@ async fn game() {
                     && let Phase::Result(card) = &session.play.phase
                     && !(fence_was_cleared && card.outcome == Outcome::Homer)
                 {
-                    if card
-                        .fielding
-                        .as_ref()
-                        .is_some_and(|view| view.returning.is_some())
-                    {
+                    if card.fielding.as_ref().is_some_and(|view| {
+                        view.returning.is_some() || matches!(card.outcome, Outcome::FlyOut(_))
+                    }) {
                         sounds.glove();
                     }
                     sounds.result(card.outcome);
@@ -399,7 +397,7 @@ async fn game() {
 fn draw_idle(camera: &Camera3D, delivery: Delivery, park: Park) {
     set_camera(camera);
     field(park);
-    fielders(&Defense::new(park), 0.0, None, None);
+    fielders(&Defense::new(park), 0.0, None, None, 0.0);
     pitcher(-batting::WINDUP, delivery);
     set_default_camera();
 }
@@ -435,6 +433,7 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: PreviewTiming) {
                 flight.elapsed,
                 flight.returning.as_ref(),
                 catch,
+                0.0,
             );
             if flight.confident {
                 confident_runner(&flight.runner, flight.elapsed);
@@ -488,7 +487,13 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: PreviewTiming) {
                 Outcome::FlyOut(fielder) => Some((fielder, view.ball)),
                 _ => None,
             };
-            fielders(&view.defense, view.elapsed, view.returning.as_ref(), catch);
+            fielders(
+                &view.defense,
+                view.elapsed,
+                view.returning.as_ref(),
+                catch,
+                play.result_time as f32,
+            );
             if *outcome != Outcome::Foul {
                 batter_runner(&view.runner, view.elapsed, false);
             }
@@ -503,7 +508,7 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: PreviewTiming) {
         _ => {
             set_camera(camera);
             field(play.park);
-            fielders(&Defense::new(play.park), 0.0, None, None);
+            fielders(&Defense::new(play.park), 0.0, None, None, 0.0);
             pitcher(play.time, play.pitch.delivery);
             bat(play.time, &play.aim);
             if matches!(play.phase, Phase::Pitch) && play.time >= 0.0 {

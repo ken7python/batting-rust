@@ -86,6 +86,7 @@ pub struct Flight {
     pub elapsed: f32,
     pub strong: bool,
     pub try_close_advance: bool,
+    pub try_dive: bool,
     pub confident: bool,
     pub home_run: bool,
     pub defense: Defense,
@@ -128,6 +129,7 @@ impl Flight {
             elapsed: 0.0,
             strong,
             try_close_advance: false,
+            try_dive: false,
             confident,
             home_run: false,
             defense: Defense::new(park),
@@ -327,13 +329,23 @@ impl Flight {
                     false,
                     self.runner.target(),
                 );
-                if !self.hit_wall
-                    && self.velocity.y < 0.0
-                    && (0.45..=2.35).contains(&reachable.y)
-                    && let Some(fielder) = self.defense.within_reach(reachable.xz(), true)
-                {
-                    self.position = reachable;
-                    return Some(Outcome::FlyOut(fielder));
+                if !self.hit_wall && self.velocity.y < 0.0 {
+                    let catch = if (0.45..=2.35).contains(&reachable.y) {
+                        self.defense.within_reach(reachable.xz(), true)
+                    } else {
+                        None
+                    };
+                    let catch = catch.or_else(|| {
+                        if self.try_dive {
+                            self.defense.dive_for(reachable)
+                        } else {
+                            None
+                        }
+                    });
+                    if let Some(fielder) = catch {
+                        self.position = reachable;
+                        return Some(Outcome::FlyOut(fielder));
+                    }
                 }
             }
         }
@@ -603,6 +615,35 @@ mod tests {
                 assert!(flight.position.xz().abs_diff_eq(returning.target, 0.01));
                 assert!(flight.batted_point().xz().distance(returning.target) > 5.0);
             } else {
+                assert!(flight.ground_contact.is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn a_dive_only_catches_a_low_fly_just_beyond_normal_reach() {
+        let hit = Grade {
+            contact: Contact::Touch,
+            timing: 0.0,
+            offset: Vec2::ZERO,
+        };
+        for (allow_dive, height, gap, caught, dived) in [
+            (true, 0.7, 1.7, true, true),
+            (false, 0.7, 1.7, false, false),
+            (true, 0.7, 0.7, true, false),
+            (true, 0.7, 2.5, false, false),
+            (true, 1.5, 1.7, false, false),
+            (true, BALL_RADIUS, 1.7, false, false),
+        ] {
+            let mut flight = Flight::new(CENTER, hit, Park::Central);
+            flight.try_dive = allow_dive;
+            flight.elapsed = 1.0;
+            flight.position = vec3(gap, height, -62.0);
+            flight.velocity = vec3(0.0, -4.0, 0.0);
+            let outcome = flight.advance(STEP);
+            assert_eq!(outcome, caught.then_some(Outcome::FlyOut(Fielder::Center)));
+            assert_eq!(flight.defense.diving, dived.then_some(Fielder::Center));
+            if dived {
                 assert!(flight.ground_contact.is_none());
             }
         }
