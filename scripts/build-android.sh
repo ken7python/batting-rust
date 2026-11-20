@@ -36,7 +36,7 @@ build_abi() {
     local target="$1" abi="$2" linker_var="$3" library symbols
     local linker="$bin/${target}26-clang"
     env "$linker_var=$linker" cargo rustc --locked --release --lib --target "$target" \
-        --target-dir "$workspace/rust" --crate-type cdylib
+        --target-dir "$workspace/rust" --crate-type cdylib -- -Clink-arg=-Wl,-z,max-page-size=16384
     library="$workspace/rust/$target/release/libbatting.so"
     symbols="$("$bin/llvm-nm" --dynamic --defined-only "$library" --format=posix)"
     for symbol in JNI_OnLoad Java_quad_1native_QuadNative_activityOnCreate Java_quad_1native_QuadNative_surfaceOnTouch; do
