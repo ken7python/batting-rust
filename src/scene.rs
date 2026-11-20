@@ -18,6 +18,23 @@ const INK: Color = Color::from_rgba(9, 26, 34, 255);
 pub const AIM_GREEN: Color = Color::from_rgba(126, 245, 71, 255);
 
 pub fn batter_camera() -> Camera3D {
+    let mut camera = field_camera();
+    camera.fovy = batter_fov(screen_width(), screen_height());
+    camera
+}
+
+fn batter_fov(width: f32, height: f32) -> f32 {
+    let focal_height = (width * 1.75).clamp(400.0, 740.0);
+    let half_fov = 23.5_f32.to_radians();
+    (2.0 * (half_fov.tan() * height / focal_height).atan())
+        .clamp(23_f32.to_radians(), 60_f32.to_radians())
+}
+
+pub fn marker_scale(width: f32, height: f32) -> f32 {
+    (width.min(height * 1.7) / 760.0).clamp(1.0, 1.85)
+}
+
+fn field_camera() -> Camera3D {
     Camera3D {
         position: vec3(0.07, 1.68, 3.55),
         target: vec3(0.0, 0.43, -9.0),
@@ -33,6 +50,7 @@ pub fn flight_camera(ball: Vec3, velocity: Vec3, elapsed: f32) -> Camera3D {
     let direction = vec3(velocity.x, 0.0, velocity.z).normalize_or_zero();
     let blend = (elapsed / 0.55).clamp(0.0, 1.0);
     let blend = blend * blend * (3.0 - 2.0 * blend);
+    camera.fovy = camera.fovy + (field_camera().fovy - camera.fovy) * blend;
     camera.position = camera
         .position
         .lerp(ball - direction * 7.5 + vec3(3.2, 2.5, 0.0), blend);
@@ -50,7 +68,7 @@ pub fn return_camera(returning: &FieldReturn) -> Camera3D {
         position: target + vec3(span * 0.35 + 7.0, span * 0.40 + 5.0, span * 0.5 + 9.0),
         target,
         z_near: 0.65,
-        ..batter_camera()
+        ..field_camera()
     }
 }
 
@@ -495,24 +513,24 @@ pub fn reticle(camera: &Camera3D, aim: &Aim) {
     let top = a.y.min(b.y).floor();
     let width = (b.x - a.x).abs().ceil();
     let height = (a.y - b.y).abs().ceil();
-    let thickness = (screen_height() / 360.0).clamp(2.5, 4.5);
+    let scale = marker_scale(screen_width(), screen_height());
+    let thickness = 2.75 * scale;
     let color = Color::new(0.98, 0.98, 0.83, 0.85);
     draw_rectangle(left, top, width, thickness, color);
     draw_rectangle(left, top + height - thickness, width, thickness, color);
     draw_rectangle(left, top, thickness, height, color);
     draw_rectangle(left + width - thickness, top, thickness, height, color);
     let p = project(camera, on_plate(aim.point));
-    let scale = (screen_height() / 720.0).clamp(0.90, 2.0);
     let tint = if aim.held {
         Color::from_rgba(181, 255, 102, 255)
     } else {
         AIM_GREEN
     };
     if aim.held {
-        draw_circle(p.x, p.y, 14.0 * scale, Color::new(0.55, 1.0, 0.28, 0.20));
+        draw_circle(p.x, p.y, 18.0 * scale, Color::new(0.55, 1.0, 0.28, 0.20));
     }
-    draw_circle_lines(p.x, p.y, 12.0 * scale, 6.0 * scale, INK);
-    draw_circle_lines(p.x, p.y, 12.0 * scale, 3.6 * scale, tint);
+    draw_circle_lines(p.x, p.y, 15.0 * scale, 6.0 * scale, INK);
+    draw_circle_lines(p.x, p.y, 15.0 * scale, 4.0 * scale, tint);
     draw_circle(p.x, p.y, 2.1 * scale, tint);
 }
 
