@@ -49,6 +49,25 @@ impl Outcome {
             _ => None,
         }
     }
+
+    pub fn is_hit(self) -> bool {
+        matches!(
+            self,
+            Self::Homer | Self::Triple | Self::Double | Self::HardFair | Self::Fair
+        )
+    }
+
+    pub fn points(self) -> u32 {
+        match self {
+            Self::Homer => 500,
+            Self::Triple => 400,
+            Self::Double => 300,
+            Self::HardFair => 250,
+            Self::Fair => 100,
+            Self::Ball => 25,
+            _ => 0,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -58,12 +77,24 @@ pub struct GroundContact {
 }
 
 #[derive(Clone, Copy)]
+pub struct HomeRun {
+    pub at: f32,
+    pub distance: f32,
+}
+
+impl HomeRun {
+    pub fn is_big(self) -> bool {
+        self.distance >= 115.0
+    }
+}
+
+#[derive(Clone, Copy)]
 pub struct Flight {
     pub position: Vec3,
     pub velocity: Vec3,
     pub elapsed: f32,
     pub strong: bool,
-    pub cleared_fence: bool,
+    pub home_run: Option<HomeRun>,
     pub defense: Defense,
     pub returning: Option<FieldReturn>,
     pub runner: Runner,
@@ -100,7 +131,7 @@ impl Flight {
             ) * speed,
             elapsed: 0.0,
             strong,
-            cleared_fence: false,
+            home_run: None,
             defense: Defense::new(park),
             returning: None,
             runner: Runner::default(),
@@ -125,7 +156,7 @@ impl Flight {
     }
 
     pub fn can_boost_runner(&self) -> bool {
-        !self.cleared_fence
+        self.home_run.is_none()
             && self.runner.moving()
             && !self.returning.is_some_and(|returning| returning.arrived())
     }
@@ -134,7 +165,7 @@ impl Flight {
         let dt = STEP as f32;
         self.elapsed += dt;
         let was_running = self.runner.moving();
-        if !self.cleared_fence {
+        if self.home_run.is_none() {
             self.runner.advance(STEP);
         }
         let result = if self.returning.is_some() {
@@ -146,7 +177,7 @@ impl Flight {
             && was_running
             && !self.runner.moving()
             && self.runner.target() < 3
-            && !self.cleared_fence
+            && self.home_run.is_none()
             && self.time_to_defend_next_base() >= self.runner.next_leg_time() + 0.05
         {
             self.runner.start_next_leg();
@@ -210,7 +241,7 @@ impl Flight {
         forecast.runner.start_next_leg();
         for step in 1..=2400 {
             forecast.elapsed += STEP as f32;
-            if forecast.step_batted_ball(STEP as f32).is_some() || forecast.cleared_fence {
+            if forecast.step_batted_ball(STEP as f32).is_some() || forecast.home_run.is_some() {
                 break;
             }
             if let Some(returning) = forecast.returning {
@@ -226,18 +257,13 @@ impl Flight {
             return None;
         }
         let old = self.position;
-        self.velocity +=
-            (vec3(0.0, -9.81, 0.0) - self.velocity * self.velocity.length() * 0.0032) * dt;
+        self.velocity = air_velocity(self.velocity, dt);
         let next = old + self.velocity * dt;
 
         let (fence_radius, fence_height) = self.park.fence();
         let radius_sq = |p: Vec3| p.x * p.x + p.z * p.z;
-        let ground = if next.y <= BALL_RADIUS {
-            Some(((old.y - BALL_RADIUS) / (old.y - next.y)).clamp(0.0, 1.0))
-        } else {
-            None
-        };
-        let wall = if !self.cleared_fence && radius_sq(next) >= fence_radius * fence_radius {
+        let ground = ground_fraction(old, next);
+        let wall = if self.home_run.is_none() && radius_sq(next) >= fence_radius * fence_radius {
             let (mut low, mut high) = (0.0, 1.0);
             for _ in 0..16 {
                 let middle = (low + high) * 0.5;
@@ -258,7 +284,10 @@ impl Flight {
                 return Some(Outcome::Foul);
             }
             if self.strong && crossing.y >= fence_height {
-                self.cleared_fence = true;
+                self.home_run = Some(HomeRun {
+                    at: self.elapsed,
+                    distance: airborne_landing(next, self.velocity).xz().length(),
+                });
             } else {
                 let normal = vec3(crossing.x, 0.0, crossing.z).normalize();
                 self.position = crossing - normal * 0.03;
@@ -268,7 +297,7 @@ impl Flight {
                 return None;
             }
         }
-        if !self.cleared_fence {
+        if self.home_run.is_none() {
             let reachable = old.lerp(next, ground.unwrap_or(1.0));
             if fair(reachable) {
                 self.defense.chase(
@@ -292,7 +321,7 @@ impl Flight {
         if let Some(fraction) = ground {
             let point = old.lerp(next, fraction);
             self.position = point;
-            if self.cleared_fence {
+            if self.home_run.is_some() {
                 return Some(Outcome::Homer);
             }
             self.ground_contact = Some(GroundContact {
@@ -359,6 +388,26 @@ impl Flight {
     }
 }
 
+fn air_velocity(velocity: Vec3, dt: f32) -> Vec3 {
+    velocity + (vec3(0.0, -9.81, 0.0) - velocity * velocity.length() * 0.0032) * dt
+}
+
+fn ground_fraction(old: Vec3, next: Vec3) -> Option<f32> {
+    (next.y <= BALL_RADIUS).then(|| ((old.y - BALL_RADIUS) / (old.y - next.y)).clamp(0.0, 1.0))
+}
+
+fn airborne_landing(mut pos: Vec3, mut velocity: Vec3) -> Vec3 {
+    let dt = STEP as f32;
+    loop {
+        velocity = air_velocity(velocity, dt);
+        let next = pos + velocity * dt;
+        if let Some(fraction) = ground_fraction(pos, next) {
+            return pos.lerp(next, fraction);
+        }
+        pos = next;
+    }
+}
+
 fn fair(point: Vec3) -> bool {
     point.z <= 0.0 && point.x.abs() <= -point.z + 1e-4
 }
@@ -404,9 +453,13 @@ mod tests {
         let mut flight = Flight::new(CENTER, ideal, Park::Central);
         for _ in 0..240 {
             assert!(flight.advance(STEP).is_none());
-            if flight.cleared_fence {
+            if let Some(home_run) = flight.home_run {
                 assert!(flight.position.y > Park::Central.fence().1);
                 assert!(flight.position.xz().length() >= Park::Central.fence().0);
+                assert!(home_run.is_big());
+                let result = (0..1200).find_map(|_| flight.advance(STEP));
+                assert_eq!(result, Some(Outcome::Homer));
+                assert!((home_run.distance - flight.position.xz().length()).abs() < 0.01);
                 return;
             }
         }
@@ -429,6 +482,7 @@ mod tests {
             flight.velocity = vec3(0.0, 0.0, -31.0);
             let result = (0..1200).find_map(|_| flight.advance(STEP));
             assert_eq!(result, Some(expected));
+            assert!(!flight.home_run.is_some_and(HomeRun::is_big));
         }
     }
 

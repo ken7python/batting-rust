@@ -16,6 +16,17 @@ const MUTED: Color = Color::from_rgba(179, 199, 183, 255);
 const AMBER: Color = Color::from_rgba(255, 201, 95, 255);
 const AIM_CALL_COLOR: Color = Color::from_rgba(161, 236, 154, 255);
 
+fn hit_accent(outcome: Outcome) -> Option<Color> {
+    match outcome {
+        Outcome::Fair => Some(AIM_CALL_COLOR),
+        Outcome::HardFair => Some(Color::from_rgba(112, 239, 226, 255)),
+        Outcome::Double => Some(Color::from_rgba(142, 200, 255, 255)),
+        Outcome::Triple => Some(Color::from_rgba(255, 152, 107, 255)),
+        Outcome::Homer => Some(AMBER),
+        _ => None,
+    }
+}
+
 #[derive(Clone, Copy)]
 pub enum Action {
     Challenge,
@@ -409,6 +420,21 @@ impl<'a> Ui<'a> {
         }
         if let Phase::Result(card) = &session.play.phase {
             self.feedback(session, card);
+            if let Some(color) = hit_accent(card.outcome) {
+                let mut detail = card
+                    .landing
+                    .map_or_else(String::new, |point| format!("{:.0} m", point.xz().length()));
+                if matches!(session.mode, Mode::Challenge) {
+                    detail.push_str(&format!("    +{} 点", card.outcome.points()));
+                }
+                self.hit_banner(
+                    card.outcome.label(),
+                    &detail,
+                    color,
+                    session.play.result_time as f32,
+                    card.outcome == Outcome::Homer,
+                );
+            }
             if session.play.result_time < 0.9 {
                 match card.outcome {
                     Outcome::Foul => self.field_call("ファール", AMBER),
@@ -443,7 +469,7 @@ impl<'a> Ui<'a> {
                     ),
                 )
             } else {
-                let label = if flight.cleared_fence {
+                let label = if flight.home_run.is_some() {
                     "ホームラン"
                 } else {
                     "飛距離"
@@ -455,10 +481,14 @@ impl<'a> Ui<'a> {
                 x + 13.0 * s,
                 h - 64.0 * s,
                 17.0,
-                if flight.cleared_fence { AMBER } else { MUTED },
+                if flight.home_run.is_some() {
+                    AMBER
+                } else {
+                    MUTED
+                },
             );
             self.text(&detail, x + 13.0 * s, h - 30.0 * s, 26.0, CREAM);
-            if !flight.cleared_fence {
+            if flight.home_run.is_none() {
                 self.runner_diamond(&flight.runner, !session.paused && flight.can_boost_runner());
             }
             if flight
@@ -466,6 +496,15 @@ impl<'a> Ui<'a> {
                 .is_some_and(|contact| flight.elapsed - contact.at < 0.8)
             {
                 self.field_call("フェア", AIM_CALL_COLOR);
+            }
+            if let Some(homer) = flight.home_run.filter(|homer| homer.is_big()) {
+                self.hit_banner(
+                    "確定ホームラン",
+                    &format!("{:.0} m", homer.distance),
+                    AMBER,
+                    flight.elapsed - homer.at,
+                    true,
+                );
             }
         } else if matches!(session.play.phase, Phase::Pitch) {
             let hint = if session.play.time < 0.0 {
@@ -535,6 +574,67 @@ impl<'a> Ui<'a> {
             size,
             color,
         );
+    }
+
+    fn centered_text(&mut self, label: &str, x: f32, y: f32, size: f32, color: Color) {
+        let width = measure_text(
+            label,
+            Some(self.font),
+            (size * self.scale).round() as u16,
+            1.0,
+        )
+        .width;
+        self.text(label, x - width * 0.5, y, size, color);
+    }
+
+    fn hit_banner(&mut self, title: &str, detail: &str, color: Color, age: f32, homer: bool) {
+        let s = self.scale;
+        let center = self.area.center().x;
+        let entry = (age / 0.24).clamp(0.0, 1.0);
+        let settle = 1.0 - (1.0 - entry).powi(3);
+        let width = (if homer { 404.0 } else { 330.0 }) * s;
+        let x = center - width * 0.5;
+        let y = self.area.y + (123.0 - 20.0 * (1.0 - settle)) * s;
+        let height = 94.0 * s;
+        let pulse = (1.0 - age / 0.72).max(0.0);
+        if pulse > 0.0 {
+            let origin = vec2(center, y + height * 0.5);
+            let burst = 1.0 - pulse * pulse;
+            let sparks = if homer { 24 } else { 14 };
+            for index in 0..sparks {
+                let theta = std::f32::consts::TAU * index as f32 / sparks as f32;
+                let arrow = vec2(theta.cos(), theta.sin());
+                let edge = origin
+                    + arrow * vec2(width * (0.44 + 0.25 * burst), height * (0.4 + 0.36 * burst));
+                let trail = edge - arrow * (9.0 + 16.0 * pulse) * s;
+                let glow = Color {
+                    a: 0.9 * pulse,
+                    ..color
+                };
+                self.draws.push(Draw::Line(trail, edge, glow));
+                self.draws
+                    .push(Draw::Dot(edge, (1.5 + 2.0 * pulse) * s, glow));
+            }
+        }
+        self.fill(x, y, width, height, Color::from_rgba(12, 30, 34, 250));
+        self.draws
+            .push(Draw::Border(Rect::new(x, y, width, height), color));
+        self.fill(x, y, width, 4.0 * s, color);
+        for side in [-1.0, 1.0] {
+            let edge = center + side * (width * 0.5 - 16.0 * s);
+            for stripe in 0..3 {
+                let at = edge - side * stripe as f32 * 8.0 * s;
+                self.draws.push(Draw::Line(
+                    vec2(at, y + 18.0 * s),
+                    vec2(at - side * 14.0 * s, y + 45.0 * s),
+                    Color { a: 0.60, ..color },
+                ));
+            }
+        }
+        let title_size =
+            (if homer { 42.0 } else { 40.0 }) + 7.0 * (entry * std::f32::consts::PI).sin();
+        self.centered_text(title, center, y + 57.0 * s, title_size, color);
+        self.centered_text(detail, center, y + 80.0 * s, 17.0, CREAM);
     }
 
     fn runner_diamond(&mut self, runner: &Runner, can_boost: bool) {

@@ -40,24 +40,8 @@ pub struct Record {
 impl Record {
     fn record(&mut self, outcome: Outcome) {
         self.completed += 1;
-        self.points += match outcome {
-            Outcome::Homer => 500,
-            Outcome::Triple => 400,
-            Outcome::Double => 300,
-            Outcome::HardFair => 250,
-            Outcome::Fair => 100,
-            Outcome::Ball => 25,
-            Outcome::Whiff
-            | Outcome::Foul
-            | Outcome::Strike
-            | Outcome::FlyOut(_)
-            | Outcome::GroundOut(_)
-            | Outcome::BaseOut(_) => 0,
-        };
-        self.fair += u32::from(matches!(
-            outcome,
-            Outcome::Homer | Outcome::Triple | Outcome::Double | Outcome::HardFair | Outcome::Fair
-        ));
+        self.points += outcome.points();
+        self.fair += u32::from(outcome.is_hit());
         self.home_runs += u32::from(outcome == Outcome::Homer);
         self.doubles += u32::from(outcome == Outcome::Double);
         self.triples += u32::from(outcome == Outcome::Triple);
@@ -107,7 +91,12 @@ impl Session {
         {
             self.record.record(card.outcome);
         }
-        if self.play.result_time < RESULT_SECONDS {
+        let result_seconds = match &self.play.phase {
+            Phase::Result(card) if card.outcome == Outcome::Homer => 2.05,
+            Phase::Result(card) if card.outcome.is_hit() => 1.75,
+            _ => RESULT_SECONDS,
+        };
+        if self.play.result_time < result_seconds {
             return None;
         }
         if matches!(self.mode, Mode::Challenge) && self.record.completed >= CHALLENGE_LENGTH {

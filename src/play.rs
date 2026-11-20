@@ -105,7 +105,10 @@ impl Play {
                 }
             }
             Phase::Flight(flight) => {
-                if let Some(outcome) = flight.advance(dt) {
+                let slow = flight
+                    .home_run
+                    .is_some_and(|homer| homer.is_big() && flight.elapsed - homer.at < 0.48);
+                if let Some(outcome) = flight.advance(if slow { dt * 0.55 } else { dt }) {
                     let result = batted_ball_result(outcome, self.contact, flight);
                     self.finish(result);
                 }
