@@ -3,7 +3,7 @@ use macroquad::prelude::*;
 use crate::batting::{BALL_RADIUS, Contact, Grade, HIT_TIMING, MEET_RADIUS};
 use crate::defense::{Defense, FieldReturn, Fielder};
 use crate::park::Park;
-use crate::runner::Runner;
+use crate::runner::{Runner, SLIDE_SECONDS};
 
 pub const STEP: f64 = 1.0 / 120.0;
 // Speed up ball travel without increasing its range or speeding up runners.
@@ -161,6 +161,17 @@ impl Flight {
         let dt = STEP as f32;
         self.elapsed += dt;
         let was_running = self.runner.moving();
+        if was_running
+            && self.runner.target() >= 2
+            && let Some(returning) = self.returning
+            && returning.base == self.runner.target()
+        {
+            let runner_time = self.runner.remaining_time();
+            let ball_time = f64::from(returning.remaining());
+            if runner_time <= SLIDE_SECONDS && (ball_time - runner_time).abs() <= 0.22 {
+                self.runner.sliding = true;
+            }
+        }
         if self.confident {
             self.runner.advance(STEP * 0.38);
         } else if !self.home_run {
@@ -670,6 +681,46 @@ mod tests {
             assert_eq!(outcome, expected);
             if outcome == Outcome::Triple {
                 assert_eq!(flight.runner.position(), crate::defense::THIRD_BASE);
+            }
+        }
+    }
+
+    #[test]
+    fn a_runner_slides_only_on_close_plays_at_second_or_third() {
+        for (base, first, second) in [(1, 0.0, 0.0), (2, 3.95, 0.0), (3, 3.95, 3.10)] {
+            for (runner_time, ball_time, slides) in [(0.26, 0.21, base > 1), (0.26, 0.65, false)] {
+                let mut flight = Flight::new(
+                    CENTER,
+                    Grade {
+                        contact: Contact::Touch,
+                        timing: 0.0,
+                        offset: Vec2::ZERO,
+                    },
+                    Park::Central,
+                );
+                for leg in [first, second] {
+                    if leg != 0.0 {
+                        flight.runner.advance(leg);
+                        flight.runner.start_next_leg();
+                    }
+                }
+                let leg = [3.95, 3.10, 3.25][base - 1];
+                flight.runner.advance(leg - runner_time);
+                let bag = [
+                    crate::defense::FIRST_BASE,
+                    crate::defense::SECOND_BASE,
+                    crate::defense::THIRD_BASE,
+                ][base - 1];
+                flight.defense.positions[Fielder::Center as usize] = bag + Vec2::Y * 35.0;
+                let mut returning =
+                    FieldReturn::new(Fielder::Center, bag.extend(0.0), &flight.defense, base);
+                returning.advance(&mut flight.defense, returning.remaining() - ball_time);
+                flight.returning = Some(returning);
+                assert!(flight.advance(STEP).is_none());
+                assert_eq!(
+                    flight.runner.sliding, slides,
+                    "base {base} with ball time {ball_time}"
+                );
             }
         }
     }

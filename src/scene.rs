@@ -6,7 +6,7 @@ use crate::defense::{Defense, FIRST_BASE, FieldReturn, Fielder, SECOND_BASE, THI
 use crate::flight::GroundContact;
 use crate::park::Park;
 use crate::pitch::{Delivery, PitchForm};
-use crate::runner::Runner;
+use crate::runner::{Runner, SLIDE_SECONDS};
 
 pub const MOUND: Vec3 = vec3(0.0, 0.0, -17.0);
 const GRASS: Color = Color::from_rgba(49, 104, 74, 255);
@@ -60,16 +60,23 @@ pub fn flight_camera(ball: Vec3, velocity: Vec3, elapsed: f32) -> Camera3D {
     camera
 }
 
-pub fn return_camera(returning: &FieldReturn) -> Camera3D {
+pub fn return_camera(returning: &FieldReturn, runner: &Runner) -> Camera3D {
     let middle = (returning.pickup.xz() + returning.target) * 0.5;
     let span = returning.pickup.xz().distance(returning.target);
     let target = vec3(middle.x, 0.8, middle.y);
-    Camera3D {
+    let mut camera = Camera3D {
         position: target + vec3(span * 0.35 + 7.0, span * 0.40 + 5.0, span * 0.5 + 9.0),
         target,
         z_near: 0.65,
         ..field_camera()
+    };
+    if runner.sliding {
+        let target = vec3(returning.target.x, 0.6, returning.target.y);
+        let closeup = (1.0 - runner.remaining_time() / SLIDE_SECONDS) as f32 * 0.85 + 0.15;
+        camera.position = camera.position.lerp(target + vec3(5.2, 4.4, 8.5), closeup);
+        camera.target = camera.target.lerp(target, closeup);
     }
+    camera
 }
 
 pub fn project(camera: &Camera3D, position: Vec3) -> Vec2 {
@@ -248,6 +255,36 @@ fn draw_runner(runner: &Runner, time: f32, active: bool, walking: bool) {
         0.0
     };
     let jersey = Color::from_rgba(232, 116, 67, 255);
+    if runner.sliding {
+        let progress = (1.0 - runner.remaining_time() / SLIDE_SECONDS) as f32;
+        let hips = feet - forward * 0.61 + Vec3::Y * (0.21 + 0.37 * (1.0 - progress));
+        let shoulders = hips - forward * 0.51 + Vec3::Y * (0.14 + 0.32 * (1.0 - progress));
+        draw_sphere(
+            shoulders - forward * 0.16 + Vec3::Y * 0.13,
+            0.16,
+            None,
+            jersey,
+        );
+        for segment in 0..=4 {
+            let t = segment as f32 / 4.0;
+            draw_cube(
+                hips.lerp(shoulders, t),
+                vec3(0.34, 0.23, 0.34),
+                None,
+                jersey,
+            );
+            for lateral in [-0.12, 0.12] {
+                let toe = feet + Vec3::Y * 0.11 + side * lateral;
+                draw_cube(
+                    hips.lerp(toe, t) + side * (lateral * (1.0 - t)),
+                    vec3(0.18, 0.17, 0.18),
+                    None,
+                    WHITE,
+                );
+            }
+        }
+        return;
+    }
     draw_cube(feet + Vec3::Y * 1.09, vec3(0.47, 0.60, 0.38), None, jersey);
     draw_sphere(
         feet + Vec3::Y * 1.59,
