@@ -267,10 +267,10 @@ async fn game() {
             } else if !session.paused
                 && let Phase::Flight(flight) = &mut session.play.phase
                 && flight.can_boost_runner()
-                && input.actions.iter().any(|action| {
-                    matches!(*action, BatInput::Press(point)
-                        if !ui.pause_rect().contains(point / dpi))
-                })
+                && input
+                    .actions
+                    .iter()
+                    .any(|action| matches!(*action, BatInput::Press(_)))
             {
                 flight.runner.tap();
             }
@@ -412,6 +412,11 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: bool) {
                 || flight_camera(flight.position, flight.velocity, flight.elapsed),
                 return_camera,
             );
+            let follow = if flight.confident {
+                batter_camera()
+            } else {
+                follow
+            };
             set_camera(&follow);
             field(play.park);
             let catch = flight
@@ -436,7 +441,9 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: bool) {
                 flight.returning.as_ref(),
                 catch,
             );
-            if flight.home_run.is_none() {
+            if flight.confident {
+                confident_runner(&flight.runner, flight.elapsed);
+            } else {
                 batter_runner(&flight.runner, flight.elapsed, true);
             }
             if let Some(contact) = flight.ground_contact {
@@ -458,7 +465,7 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: bool) {
                     let start = flight.position - flight.velocity * (i as f32 * trail_step);
                     let end = start - flight.velocity * trail_step;
                     let alpha = 0.9 - i as f32 * 0.11;
-                    let color = if flight.home_run.is_some_and(flight::HomeRun::is_big) {
+                    let color = if flight.confident {
                         Color::new(1.0, 0.73, 0.25, alpha)
                     } else {
                         Color::new(1.0, 0.88, 0.58, alpha)

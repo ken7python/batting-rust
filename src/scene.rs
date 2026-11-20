@@ -199,13 +199,21 @@ pub fn field(park: Park) {
 }
 
 pub fn batter_runner(runner: &Runner, time: f32, active: bool) {
+    draw_runner(runner, time, active, false);
+}
+
+pub fn confident_runner(runner: &Runner, time: f32) {
+    draw_runner(runner, time, true, true);
+}
+
+fn draw_runner(runner: &Runner, time: f32, active: bool, walking: bool) {
     let point = runner.position();
     let feet = vec3(point.x, 0.0, point.y);
     let facing = runner.direction();
     let forward = vec3(facing.x, 0.0, facing.y);
     let side = Vec3::Y.cross(forward);
     let stride = if active && runner.moving() {
-        (time * 24.0).sin() * 0.28
+        (time * if walking { 7.0 } else { 24.0 }).sin() * if walking { 0.10 } else { 0.28 }
     } else {
         0.0
     };
@@ -482,14 +490,17 @@ pub fn bat(time: f64, aim: &Aim) {
 pub fn reticle(camera: &Camera3D, aim: &Aim) {
     let a = project(camera, on_plate(ZONE_MIN));
     let b = project(camera, on_plate(ZONE_MAX));
-    draw_rectangle_lines(
-        a.x,
-        b.y,
-        b.x - a.x,
-        a.y - b.y,
-        1.5,
-        Color::new(0.98, 0.98, 0.83, 0.55),
-    );
+    // Solid, pixel-aligned strips stay visible on high-DPI Metal displays.
+    let left = a.x.min(b.x).floor();
+    let top = a.y.min(b.y).floor();
+    let width = (b.x - a.x).abs().ceil();
+    let height = (a.y - b.y).abs().ceil();
+    let thickness = (screen_height() / 360.0).clamp(2.0, 4.0);
+    let color = Color::new(0.98, 0.98, 0.83, 0.85);
+    draw_rectangle(left, top, width, thickness, color);
+    draw_rectangle(left, top + height - thickness, width, thickness, color);
+    draw_rectangle(left, top, thickness, height, color);
+    draw_rectangle(left + width - thickness, top, thickness, height, color);
     let p = project(camera, on_plate(aim.point));
     let scale = (screen_height() / 720.0).clamp(0.75, 2.0);
     let tint = if aim.held {

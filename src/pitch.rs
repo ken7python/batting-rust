@@ -1,6 +1,6 @@
 use macroquad::prelude::*;
 
-use crate::batting::{BALL_RADIUS, CATCH_DELAY, CENTER, ZONE_MAX, ZONE_MIN};
+use crate::batting::{BALL_RADIUS, CATCH_DELAY, ZONE_MAX, ZONE_MIN};
 
 const BASE_ARC: Vec2 = vec2(0.0, 0.32);
 
@@ -299,24 +299,19 @@ impl Pitch {
                 pool[rand::gen_range(0, pool.len())]
             })
         };
-        let crossing = if opening {
-            CENTER + vec2(rand::gen_range(-0.09, 0.09), rand::gen_range(-0.10, 0.10))
-        } else if rand::gen_range(0.0, 1.0) < 0.73 {
+        let crossing = if rand::gen_range(0.0, 1.0) < 0.5 {
             vec2(
                 rand::gen_range(ZONE_MIN.x, ZONE_MAX.x),
                 rand::gen_range(ZONE_MIN.y, ZONE_MAX.y),
             )
         } else {
+            // Miss by 4–7 cm: a ball cannot clip the zone, but stays close.
+            let gap = rand::gen_range(BALL_RADIUS + 0.005, 0.07);
             match rand::gen_range(0, 4) {
-                0 => vec2(rand::gen_range(-0.51, -0.27), rand::gen_range(0.49, 1.19)),
-                1 => vec2(rand::gen_range(0.27, 0.51), rand::gen_range(0.49, 1.19)),
-                2 => vec2(rand::gen_range(-0.31, 0.31), rand::gen_range(1.23, 1.45)),
-                _ if matches!(kind, PitchKind::Forkball | PitchKind::Splitter)
-                    && rand::gen_range(0.0, 1.0) < 0.45 =>
-                {
-                    vec2(rand::gen_range(-0.30, 0.30), rand::gen_range(-0.35, -0.05))
-                }
-                _ => vec2(rand::gen_range(-0.31, 0.31), rand::gen_range(0.16, 0.44)),
+                0 => vec2(ZONE_MIN.x - gap, rand::gen_range(ZONE_MIN.y, ZONE_MAX.y)),
+                1 => vec2(ZONE_MAX.x + gap, rand::gen_range(ZONE_MIN.y, ZONE_MAX.y)),
+                2 => vec2(rand::gen_range(ZONE_MIN.x, ZONE_MAX.x), ZONE_MAX.y + gap),
+                _ => vec2(rand::gen_range(ZONE_MIN.x, ZONE_MAX.x), ZONE_MIN.y - gap),
             }
         };
         Self::new(
@@ -392,6 +387,32 @@ impl Pitch {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::batting::CENTER;
+
+    #[test]
+    fn random_pitches_split_strikes_and_close_balls_evenly() {
+        let mut strikes = 0;
+        for i in 0..10000 {
+            let pitch = Pitch::random(
+                None,
+                i % 2 == 0,
+                PitchSpeed::Normal,
+                Delivery::default(),
+                PitchMix::default(),
+            );
+            let p = pitch.crossing;
+            let inside =
+                p.x >= ZONE_MIN.x && p.x <= ZONE_MAX.x && p.y >= ZONE_MIN.y && p.y <= ZONE_MAX.y;
+            if inside {
+                strikes += 1;
+            } else {
+                let distance = (p - p.clamp(ZONE_MIN, ZONE_MAX)).length();
+                assert!(distance > BALL_RADIUS && distance <= 0.071);
+            }
+            assert!(pitch.bounce_time.is_none());
+        }
+        assert!((4500..5500).contains(&strikes));
+    }
 
     #[test]
     fn repertories_limit_random_pitches_but_allow_the_chosen_practice_pitch() {

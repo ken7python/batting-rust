@@ -680,6 +680,22 @@ impl<'a> Ui<'a> {
             );
         }
         let marker = home + runner.position() * (corner / crate::defense::FIRST_BASE.x);
+        if can_boost && runner.boosted() {
+            let pulse = (get_time() as f32 * 18.0).sin() * 0.5 + 0.5;
+            self.draws.push(Draw::Dot(
+                marker,
+                (10.0 + pulse * 5.0) * s,
+                Color::new(1.0, 0.78, 0.25, 0.20 + pulse * 0.20),
+            ));
+            for i in 1..=3 {
+                let trail = marker - runner.direction() * (i as f32 * 5.0 * s);
+                self.draws.push(Draw::Dot(
+                    trail,
+                    (4.0 - i as f32 * 0.7) * s,
+                    Color::new(1.0, 0.78, 0.25, 0.6 / i as f32),
+                ));
+            }
+        }
         self.draws.push(Draw::Dot(
             marker,
             if can_boost && runner.boosted() {
@@ -687,11 +703,7 @@ impl<'a> Ui<'a> {
             } else {
                 5.0
             } * s,
-            if can_boost && runner.boosted() {
-                AMBER
-            } else {
-                Color::from_rgba(232, 116, 67, 255)
-            },
+            AMBER,
         ));
         if can_boost {
             self.text(
