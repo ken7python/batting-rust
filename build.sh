@@ -152,7 +152,7 @@ else:
 }
 
 usage() {
-    printf 'Usage: %s [all|web|macos|macos-dmg|ios-sim|ios-device|pages]\n' "$0"
+    printf 'Usage: %s [all|web|macos|macos-dmg|ios-sim|ios-device|android|pages]\n' "$0"
     printf '%s\n' 'Windows: run scripts/build-windows.ps1 in PowerShell.'
     printf '%s\n' 'Default: build both Web and macOS.'
 }
@@ -169,6 +169,7 @@ case "${1:-all}" in
     macos-dmg) build_macos_dmg ;;
     ios-sim) build_ios sim ;;
     ios-device) build_ios device ;;
+    android) "$repo/scripts/build-android.sh" ;;
     all) build_web; build_macos ;;
     -h|--help) usage ;;
     *) usage >&2; exit 2 ;;

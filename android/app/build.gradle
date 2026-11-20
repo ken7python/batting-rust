@@ -1,0 +1,39 @@
+plugins {
+    id 'com.android.application' version '8.7.3'
+}
+
+layout.buildDirectory = rootProject.layout.projectDirectory.dir('../target/android/gradle/app')
+def generated = rootProject.layout.projectDirectory.dir('../target/android/generated')
+
+android {
+    namespace 'com.ken7python.batting'
+    compileSdk 35
+    buildToolsVersion '35.0.0'
+
+    defaultConfig {
+        applicationId 'com.ken7python.batting'
+        minSdk 26
+        targetSdk 35
+        versionCode 10
+        versionName providers.gradleProperty('battingVersion').get()
+        ndk {
+            abiFilters 'arm64-v8a', 'x86_64'
+        }
+    }
+    buildTypes {
+        debug {
+            applicationIdSuffix '.debug'
+        }
+    }
+    sourceSets.main {
+        java.srcDir generated.dir('java')
+        jniLibs.srcDir generated.dir('jniLibs')
+        res.srcDir generated.dir('res')
+        assets.srcDir generated.dir('assets')
+    }
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging = false
+        }
+    }
+}
