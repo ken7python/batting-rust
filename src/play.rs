@@ -167,6 +167,23 @@ mod tests {
     }
 
     #[test]
+    fn each_delivery_waits_its_own_release_delay_before_windup() {
+        let mut run = fastball();
+        for delay in [0.25, 0.61, 1.19] {
+            let mut pitch = run.pitch;
+            pitch.release_delay = delay;
+            run.next_pitch(pitch);
+            assert!(run.time < -WINDUP);
+            run.advance(delay);
+            assert!((run.time + WINDUP).abs() < 1e-9);
+            run.advance(WINDUP - 0.001);
+            assert!(run.time < 0.0);
+            run.advance(0.002);
+            assert!(run.time > 0.0);
+        }
+    }
+
+    #[test]
     fn repeated_warmups_allow_a_live_hit_or_a_called_strike() {
         for take in [false, true] {
             let mut play = fastball();

@@ -366,7 +366,7 @@ async fn game() {
                 Action::Menu => screen = Screen::Menu,
                 Action::Pitch
                 | Action::Speed(_)
-                | Action::Preview
+                | Action::Preview(_)
                 | Action::Sensitivity
                 | Action::Hand
                 | Action::Form
@@ -526,11 +526,7 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: PreviewTiming) {
     match &play.phase {
         Phase::Pitch => {
             reticle(camera, &play.aim);
-            let show_preview = match preview {
-                PreviewTiming::BeforeRelease => true,
-                PreviewTiming::AfterRelease => play.time >= 0.0,
-            };
-            if show_preview {
+            if preview.visible(play.time) {
                 let predicted = play.pitch.preview_point(play.time);
                 let p = project(camera, predicted);
                 let radius = marker_scale(screen_width(), screen_height()) * 6.0;
