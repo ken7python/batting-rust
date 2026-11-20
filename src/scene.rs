@@ -3,6 +3,7 @@ use macroquad::prelude::*;
 
 use crate::batting::*;
 use crate::defense::{Defense, FIRST_BASE, FieldReturn, Fielder, SECOND_BASE, THIRD_BASE};
+use crate::display::DisplayProfile;
 use crate::flight::GroundContact;
 use crate::park::Park;
 use crate::pitch::{Delivery, PitchForm};
@@ -17,22 +18,26 @@ const GOLD: Color = Color::from_rgba(255, 201, 95, 255);
 const INK: Color = Color::from_rgba(9, 26, 34, 255);
 pub const AIM_GREEN: Color = Color::from_rgba(126, 245, 71, 255);
 
-pub fn batter_camera() -> Camera3D {
-    batting_view(screen_width(), screen_height())
+pub fn batter_camera(display: DisplayProfile) -> Camera3D {
+    batting_view(screen_width(), screen_height(), display)
 }
 
-fn batting_view(width: f32, height: f32) -> Camera3D {
+fn batting_view(width: f32, height: f32, display: DisplayProfile) -> Camera3D {
     let mut camera = field_camera();
-    camera.fovy = batter_fov(width, height);
+    camera.fovy = batter_fov(width, height, display);
     // Lower the eye line on short screens to keep the release and zone close vertically.
     camera.position.y -= 0.50 * ((620.0 - height) / 210.0).clamp(0.0, 1.0);
     camera.target.y = batter_target_height(&camera);
     camera
 }
 
-fn batter_fov(width: f32, height: f32) -> f32 {
-    let small_screen = ((640.0 - width.min(height)) / 220.0).clamp(0.0, 1.0);
-    let focal_height = (width * 1.75).clamp(400.0, 740.0) * (1.0 + 0.40 * small_screen);
+fn batter_fov(width: f32, height: f32, display: DisplayProfile) -> f32 {
+    let focal_height = if display.mobile() {
+        let small_screen = ((640.0 - width.min(height)) / 220.0).clamp(0.0, 1.0);
+        (width * 1.75).clamp(400.0, 740.0) * (1.0 + 0.40 * small_screen)
+    } else {
+        (width * 1.75).clamp(400.0, 680.0)
+    };
     let half_fov = 23.5_f32.to_radians();
     (2.0 * (half_fov.tan() * height / focal_height).atan())
         .clamp(15_f32.to_radians(), 68_f32.to_radians())
@@ -45,8 +50,9 @@ fn batter_target_height(camera: &Camera3D) -> f32 {
     camera.position.y - down_to_target.tan() * (camera.position.z - camera.target.z)
 }
 
-pub fn marker_scale(width: f32, height: f32) -> f32 {
-    (width.min(height * 1.7) / 760.0).clamp(1.0, 1.85)
+pub fn marker_scale(width: f32, height: f32, display: DisplayProfile) -> f32 {
+    let fit = width.min(height * 1.7) / 760.0;
+    display.ui_scale(fit.max(if display.mobile() { 1.0 } else { 0.85 }))
 }
 
 fn field_camera() -> Camera3D {
@@ -60,12 +66,22 @@ fn field_camera() -> Camera3D {
     }
 }
 
-pub fn flight_camera(ball: Vec3, velocity: Vec3, elapsed: f32) -> Camera3D {
-    follow_flight(batter_camera(), ball, velocity, elapsed)
+pub fn flight_camera(
+    ball: Vec3,
+    velocity: Vec3,
+    elapsed: f32,
+    display: DisplayProfile,
+) -> Camera3D {
+    follow_flight(batter_camera(display), ball, velocity, elapsed)
 }
 
-pub fn home_run_camera(ball: Vec3, velocity: Vec3, elapsed: f32) -> Camera3D {
-    track_home_run(batter_camera(), ball, velocity, elapsed)
+pub fn home_run_camera(
+    ball: Vec3,
+    velocity: Vec3,
+    elapsed: f32,
+    display: DisplayProfile,
+) -> Camera3D {
+    track_home_run(batter_camera(display), ball, velocity, elapsed)
 }
 
 fn track_home_run(camera: Camera3D, ball: Vec3, velocity: Vec3, elapsed: f32) -> Camera3D {
@@ -686,7 +702,7 @@ mod tests {
             (320.0, 568.0),
             (1120.0, 720.0),
         ] {
-            let camera = batting_view(width, height);
+            let camera = batting_view(width, height, DisplayProfile::Mobile);
             let view = Mat4::perspective_rh_gl(camera.fovy, width / height, 0.01, camera.z_far)
                 * Mat4::look_at_rh(camera.position, camera.target, camera.up);
             for point in [
@@ -718,7 +734,15 @@ mod tests {
             assert!(flight.confident);
             loop {
                 let camera = track_home_run(
-                    batting_view(size.0, size.1),
+                    batting_view(
+                        size.0,
+                        size.1,
+                        if size.0 == 1120.0 {
+                            DisplayProfile::Desktop
+                        } else {
+                            DisplayProfile::Mobile
+                        },
+                    ),
                     flight.position,
                     flight.velocity,
                     flight.elapsed,
@@ -740,10 +764,11 @@ mod tests {
 
     #[test]
     fn smaller_screens_get_a_longer_batting_camera_focal_length() {
-        let magnification = |width, height| height / (batter_fov(width, height) * 0.5).tan();
-        let desktop = magnification(1120.0, 720.0);
-        assert!(magnification(390.0, 844.0) > desktop * 1.25);
-        assert!(magnification(844.0, 390.0) > desktop * 1.35);
-        assert!(magnification(320.0, 568.0) > desktop);
+        let magnification =
+            |width, height, display| height / (batter_fov(width, height, display) * 0.5).tan();
+        for (width, height) in [(390.0, 844.0), (844.0, 390.0), (320.0, 568.0)] {
+            let desktop = magnification(width, height, DisplayProfile::Desktop);
+            assert!(magnification(width, height, DisplayProfile::Mobile) > desktop * 1.25);
+        }
     }
 }
