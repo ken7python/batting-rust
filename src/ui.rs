@@ -53,7 +53,7 @@ impl Default for Settings {
         Self {
             pitch: 0,
             speed: PitchSpeed::default(),
-            preview: false,
+            preview: true,
             sensitivity: 1,
             delivery: Delivery::default(),
             park: Park::default(),
@@ -412,7 +412,7 @@ impl<'a> Ui<'a> {
             if session.play.result_time < 0.9 {
                 match card.outcome {
                     Outcome::Foul => self.field_call("ファール", AMBER),
-                    Outcome::FlyOut(_) | Outcome::GroundOut(_) => {
+                    Outcome::FlyOut(_) | Outcome::GroundOut(_) | Outcome::BaseOut(_) => {
                         self.field_call("アウト", Color::from_rgba(255, 151, 126, 255));
                     }
                     _ => {}

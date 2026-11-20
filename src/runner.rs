@@ -7,17 +7,48 @@ const ARRIVALS: [f64; 4] = [0.0, 3.95, 6.70, 9.45];
 const BOOST_DURATION: f64 = 0.30;
 const BOOST_EXTRA_SPEED: f64 = 0.12;
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 pub struct Runner {
     progress: f64,
     boost_remaining: f64,
+    target: usize,
+}
+
+impl Default for Runner {
+    fn default() -> Self {
+        Self {
+            progress: 0.0,
+            boost_remaining: 0.0,
+            target: 1,
+        }
+    }
 }
 
 impl Runner {
     pub fn advance(&mut self, dt: f64) {
         let boosted = dt.min(self.boost_remaining);
         self.boost_remaining -= boosted;
-        self.progress = (self.progress + dt + boosted * BOOST_EXTRA_SPEED).min(ARRIVALS[3]);
+        self.progress =
+            (self.progress + dt + boosted * BOOST_EXTRA_SPEED).min(ARRIVALS[self.target]);
+    }
+
+    pub fn target(&self) -> usize {
+        self.target
+    }
+
+    pub fn next_leg_time(&self) -> f64 {
+        let seconds = ARRIVALS[self.target + 1] - ARRIVALS[self.target];
+        // An active boost permits a close attempt if the player keeps tapping.
+        if self.boost_remaining > 1e-9 {
+            seconds / (1.0 + BOOST_EXTRA_SPEED)
+        } else {
+            seconds
+        }
+    }
+
+    pub fn start_next_leg(&mut self) {
+        debug_assert!(self.reached() == self.target && self.target < 3);
+        self.target += 1;
     }
 
     pub fn tap(&mut self) {
@@ -33,7 +64,7 @@ impl Runner {
     }
 
     pub fn moving(&self) -> bool {
-        self.reached() < 3
+        self.reached() < self.target
     }
 
     pub fn position(&self) -> Vec2 {
@@ -65,9 +96,13 @@ mod tests {
         runner.advance(0.01);
         assert_eq!(runner.reached(), 1);
         assert_eq!(runner.position(), FIRST_BASE);
+        runner.advance(5.0);
+        assert_eq!(runner.position(), FIRST_BASE);
+        runner.start_next_leg();
         runner.advance(2.75);
         assert_eq!(runner.reached(), 2);
         assert_eq!(runner.position(), SECOND_BASE);
+        runner.start_next_leg();
         runner.advance(9.0);
         assert_eq!(runner.reached(), 3);
         assert_eq!(runner.position(), THIRD_BASE);

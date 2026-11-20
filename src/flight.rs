@@ -16,6 +16,7 @@ pub enum Outcome {
     Triple,
     FlyOut(Fielder),
     GroundOut(Fielder),
+    BaseOut(Fielder),
     Foul,
     Whiff,
     Strike,
@@ -32,6 +33,7 @@ impl Outcome {
             Self::Triple => "三塁打",
             Self::FlyOut(_) => "フライアウト",
             Self::GroundOut(_) => "内野ゴロアウト",
+            Self::BaseOut(_) => "アウト",
             Self::Foul => "ファウル",
             Self::Whiff => "空振り",
             Self::Strike => "見送りストライク",
@@ -41,7 +43,9 @@ impl Outcome {
 
     pub fn fielder(self) -> Option<Fielder> {
         match self {
-            Self::FlyOut(fielder) | Self::GroundOut(fielder) => Some(fielder),
+            Self::FlyOut(fielder) | Self::GroundOut(fielder) | Self::BaseOut(fielder) => {
+                Some(fielder)
+            }
             _ => None,
         }
     }
@@ -53,6 +57,7 @@ pub struct GroundContact {
     pub at: f32,
 }
 
+#[derive(Clone, Copy)]
 pub struct Flight {
     pub position: Vec3,
     pub velocity: Vec3,
@@ -63,6 +68,7 @@ pub struct Flight {
     pub returning: Option<FieldReturn>,
     pub runner: Runner,
     pub ground_contact: Option<GroundContact>,
+    first_pickup: Option<Vec3>,
     park: Park,
     rolling: bool,
     hit_wall: bool,
@@ -99,6 +105,7 @@ impl Flight {
             returning: None,
             runner: Runner::default(),
             ground_contact: None,
+            first_pickup: None,
             park,
             rolling: false,
             hit_wall: false,
@@ -126,20 +133,94 @@ impl Flight {
     fn step(&mut self) -> Option<Outcome> {
         let dt = STEP as f32;
         self.elapsed += dt;
+        let was_running = self.runner.moving();
         if !self.cleared_fence {
             self.runner.advance(STEP);
         }
+        let result = if self.returning.is_some() {
+            self.step_throw(dt)
+        } else {
+            self.step_batted_ball(dt)
+        };
+        if result.is_none()
+            && was_running
+            && !self.runner.moving()
+            && self.runner.target() < 3
+            && !self.cleared_fence
+            && self.time_to_defend_next_base() >= self.runner.next_leg_time() + 0.05
+        {
+            self.runner.start_next_leg();
+        }
+        result
+    }
+
+    fn step_throw(&mut self, dt: f32) -> Option<Outcome> {
         if let Some(returning) = &mut self.returning {
             if !returning.arrived() {
                 returning.advance(&mut self.defense, dt);
                 self.position = returning.ball_position(&self.defense);
             }
-            let fielder = returning.fielder;
-            return returning
-                .arrived()
-                .then(|| self.fielded_hit(fielder))
-                .flatten();
+            if !returning.arrived() {
+                return None;
+            }
+            let base = self.runner.target();
+            if returning.base < base {
+                self.returning = Some(FieldReturn::new(
+                    returning.receiver,
+                    self.position,
+                    &self.defense,
+                    base,
+                ));
+                return None;
+            }
+            if !self.runner.moving() {
+                return Some(self.hit_at_base());
+            }
+            if returning.base == base {
+                return Some(if base == 1 {
+                    Outcome::GroundOut(returning.fielder)
+                } else {
+                    Outcome::BaseOut(returning.receiver)
+                });
+            }
         }
+        None
+    }
+
+    fn time_to_defend_next_base(&self) -> f64 {
+        let next = self.runner.target() + 1;
+        if let Some(mut returning) = self.returning {
+            let remaining = returning.remaining();
+            if returning.base == next {
+                return f64::from(remaining);
+            }
+            let mut defense = self.defense;
+            returning.advance(&mut defense, remaining);
+            let relay = FieldReturn::new(
+                returning.receiver,
+                returning.ball_position(&defense),
+                &defense,
+                next,
+            );
+            return f64::from(remaining + relay.remaining());
+        }
+
+        // Forecast the pickup using the same physics as the live play.
+        let mut forecast = *self;
+        forecast.runner.start_next_leg();
+        for step in 1..=2400 {
+            forecast.elapsed += STEP as f32;
+            if forecast.step_batted_ball(STEP as f32).is_some() || forecast.cleared_fence {
+                break;
+            }
+            if let Some(returning) = forecast.returning {
+                return f64::from(step) * STEP + f64::from(returning.remaining());
+            }
+        }
+        0.0
+    }
+
+    fn step_batted_ball(&mut self, dt: f32) -> Option<Outcome> {
         if self.rolling {
             self.roll(dt);
             return None;
@@ -239,23 +320,32 @@ impl Flight {
             .within_reach(self.position.xz(), FIELDING_REACH)
         {
             self.defense.chasing = Some(fielder);
-            self.returning = Some(FieldReturn::new(fielder, self.position, &self.defense));
+            let base = self
+                .runner
+                .target()
+                .max(if fielder.infield() { 1 } else { 2 });
+            self.returning = Some(FieldReturn::new(
+                fielder,
+                self.position,
+                &self.defense,
+                base,
+            ));
+            self.first_pickup = Some(self.position);
             self.velocity = Vec3::ZERO;
         }
     }
 
     pub fn batted_point(&self) -> Vec3 {
-        self.returning
-            .map_or(self.position, |returning| returning.pickup)
+        self.first_pickup.unwrap_or(self.position)
     }
 
-    fn fielded_hit(&self, fielder: Fielder) -> Option<Outcome> {
+    fn hit_at_base(&self) -> Outcome {
         match self.runner.reached() {
-            0 => fielder.infield().then_some(Outcome::GroundOut(fielder)),
-            1 if self.strong => Some(Outcome::HardFair),
-            1 => Some(Outcome::Fair),
-            2 => Some(Outcome::Double),
-            _ => Some(Outcome::Triple),
+            1 if self.strong => Outcome::HardFair,
+            1 => Outcome::Fair,
+            2 => Outcome::Double,
+            3 => Outcome::Triple,
+            _ => unreachable!("a hit requires a runner on base"),
         }
     }
 }
@@ -464,52 +554,86 @@ mod tests {
     }
 
     #[test]
-    fn a_return_counts_only_the_bases_the_runner_has_touched() {
-        let mut flight = Flight::new(
-            CENTER,
-            Grade {
-                contact: Contact::Touch,
-                timing: 0.0,
-                offset: Vec2::ZERO,
-            },
-            Park::Central,
-        );
-        flight.runner.advance(3.95 - STEP);
-        assert_eq!(
-            flight.fielded_hit(Fielder::Second),
-            Some(Outcome::GroundOut(Fielder::Second))
-        );
-        assert_eq!(flight.fielded_hit(Fielder::Center), None);
-        flight.runner.advance(STEP);
-        assert_eq!(flight.fielded_hit(Fielder::Second), Some(Outcome::Fair));
-        flight.runner.advance(2.70);
-        assert_eq!(flight.fielded_hit(Fielder::Center), Some(Outcome::Fair));
-        flight.runner.advance(0.05);
-        assert_eq!(flight.fielded_hit(Fielder::Center), Some(Outcome::Double));
-        flight.runner.advance(2.75);
-        assert_eq!(flight.fielded_hit(Fielder::Center), Some(Outcome::Triple));
+    fn a_committed_runner_contests_the_next_base_after_a_relay() {
+        for (extra_time, expected) in [
+            (0.0, Outcome::BaseOut(Fielder::Third)),
+            (1.9, Outcome::Triple),
+        ] {
+            let mut flight = Flight::new(
+                CENTER,
+                Grade {
+                    contact: Contact::Touch,
+                    timing: 0.0,
+                    offset: Vec2::ZERO,
+                },
+                Park::Central,
+            );
+            flight.runner.advance(3.95);
+            flight.runner.start_next_leg();
+            flight.runner.advance(2.75);
+            flight.runner.start_next_leg();
+            flight.runner.advance(extra_time);
+            flight.defense.positions[Fielder::Second as usize] = crate::defense::SECOND_BASE;
+            flight.defense.positions[Fielder::Third as usize] = crate::defense::THIRD_BASE;
+            flight.returning = Some(FieldReturn::new(
+                Fielder::Second,
+                vec3(0.0, 1.1, -38.8),
+                &flight.defense,
+                2,
+            ));
+            let (outcome, saw_third) = (0..600)
+                .scan(false, |saw_third, _| {
+                    let result = flight.advance(STEP);
+                    *saw_third |= flight.returning.is_some_and(|throw| throw.base == 3);
+                    Some((result, *saw_third))
+                })
+                .find_map(|(result, saw_third)| result.map(|outcome| (outcome, saw_third)))
+                .unwrap();
+            assert!(saw_third);
+            assert_eq!(outcome, expected);
+            if outcome == Outcome::Triple {
+                assert_eq!(flight.runner.position(), crate::defense::THIRD_BASE);
+            }
+        }
     }
 
     #[test]
-    fn repeated_taps_turn_a_deep_double_into_a_triple_in_both_parks() {
+    fn runners_hold_at_second_or_contest_third_in_both_parks() {
         for (park, timing, offset) in [
-            (Park::Central, -0.030, vec2(0.0, -0.048)),
-            (Park::Sunset, -0.025, vec2(0.025, -0.096)),
+            (Park::Central, -0.060, vec2(0.025, 0.024)),
+            (Park::Sunset, -0.040, vec2(0.075, 0.096)),
         ] {
             let hit = Grade {
                 contact: Contact::Touch,
                 timing,
                 offset,
             };
-            for (tap, expected) in [(false, Outcome::Double), (true, Outcome::Triple)] {
+            for (mode, expected) in [
+                (0, Outcome::Double),
+                (1, Outcome::Triple),
+                (2, Outcome::BaseOut(Fielder::Third)),
+            ] {
                 let mut flight = Flight::new(CENTER, hit, park);
                 let result = (0..1800).find_map(|step| {
-                    if tap && step % 30 == 0 && flight.can_boost_runner() {
+                    if mode > 0
+                        && step % 30 == 0
+                        && flight.can_boost_runner()
+                        && (mode != 2 || flight.runner.target() < 3)
+                    {
                         flight.runner.tap();
                     }
                     flight.advance(STEP)
                 });
-                assert_eq!(result, Some(expected), "{park:?} with tap={tap}");
+                assert_eq!(result, Some(expected), "{park:?} with mode={mode}");
+                match expected {
+                    Outcome::Double => {
+                        assert_eq!(flight.runner.position(), crate::defense::SECOND_BASE)
+                    }
+                    Outcome::Triple => {
+                        assert_eq!(flight.runner.position(), crate::defense::THIRD_BASE)
+                    }
+                    _ => assert_eq!(flight.returning.unwrap().base, 3),
+                }
             }
         }
     }

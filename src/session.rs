@@ -51,7 +51,8 @@ impl Record {
             | Outcome::Foul
             | Outcome::Strike
             | Outcome::FlyOut(_)
-            | Outcome::GroundOut(_) => 0,
+            | Outcome::GroundOut(_)
+            | Outcome::BaseOut(_) => 0,
         };
         self.fair += u32::from(matches!(
             outcome,
