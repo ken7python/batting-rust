@@ -34,7 +34,7 @@ fn batting_view(width: f32, height: f32, display: DisplayProfile) -> Camera3D {
 fn batter_fov(width: f32, height: f32, display: DisplayProfile) -> f32 {
     let focal_height = if display.mobile() {
         let small_screen = ((640.0 - width.min(height)) / 220.0).clamp(0.0, 1.0);
-        (width * 1.75).clamp(400.0, 740.0) * (1.0 + 0.40 * small_screen)
+        (width * 1.75).clamp(400.0, 740.0) * (1.0 + 0.46 * small_screen)
     } else {
         (width * 1.75).clamp(400.0, 680.0)
     };
@@ -669,7 +669,7 @@ pub fn reticle(camera: &Camera3D, aim: &Aim) {
     draw_rectangle(left, top, thickness, height, color);
     draw_rectangle(left + width - thickness, top, thickness, height, color);
     let p = project(camera, on_plate(aim.point));
-    let radius = projected_width * 0.15;
+    let radius = projected_width * 0.13;
     let tint = if aim.held {
         Color::from_rgba(181, 255, 102, 255)
     } else {
