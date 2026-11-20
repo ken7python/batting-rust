@@ -38,12 +38,8 @@ fn batting_view(width: f32, height: f32, display: DisplayProfile) -> Camera3D {
         // A closer, lower eye line leaves room for the top of the zone and the pitcher's hand.
         camera.position = camera.position.lerp(vec3(0.035, 1.14, 2.65), phone);
         let zone_size = ZONE_MAX - ZONE_MIN;
-        let zone_width = if display == DisplayProfile::MobileWeb {
-            // In landscape, fit the tall zone by its height before it crowds the play area.
-            (width * 0.50).min(height * 0.55 * zone_size.x / zone_size.y)
-        } else {
-            (width * 0.53).min(height * 0.51)
-        };
+        // Find the largest zone that stays within both the width and height targets.
+        let zone_width = (width * 0.50).min(height * 0.55 * zone_size.x / zone_size.y);
         let plate_distance = camera.position.distance(on_plate(CENTER));
         let focal_length = plate_distance * zone_width / zone_size.x;
         let closeup_fov = 2.0 * (height / (2.0 * focal_length)).atan();
@@ -725,7 +721,7 @@ mod tests {
     }
 
     #[test]
-    fn batting_framing_shows_both_zone_corners_and_release_on_small_screens() {
+    fn phone_framing_shows_the_release_and_fits_the_zone_to_half_the_screen() {
         for (width, height) in [
             (320.0, 568.0),
             (375.0, 667.0),
@@ -758,35 +754,10 @@ mod tests {
                     project_ndc(Delivery { hand, form }.release());
                 }
             }
-            let zone_width = (b.x - a.x).abs() * width * 0.5;
+            let span = (b - a).abs() * 0.5;
+            let limiting_axis = if width < height { span.x } else { span.y };
             assert!(
-                zone_width >= (width * 0.51).min(height * 0.49),
-                "{width}x{height}: {zone_width}"
-            );
-        }
-    }
-
-    #[test]
-    fn mobile_web_zone_uses_about_half_of_the_limiting_screen_axis() {
-        for (width, height) in [
-            (320.0, 568.0),
-            (390.0, 844.0),
-            (430.0, 932.0),
-            (568.0, 320.0),
-            (844.0, 390.0),
-            (932.0, 430.0),
-        ] {
-            let camera = batting_view(width, height, DisplayProfile::MobileWeb);
-            let view = Mat4::perspective_rh_gl(camera.fovy, width / height, 0.01, camera.z_far)
-                * Mat4::look_at_rh(camera.position, camera.target, camera.up);
-            let clip = |point: Vec2| {
-                let p = view * on_plate(point).extend(1.0);
-                p.truncate().truncate() / p.w
-            };
-            let span = (clip(ZONE_MAX) - clip(ZONE_MIN)).abs() * 0.5;
-            let expected = if width < height { span.x } else { span.y };
-            assert!(
-                (0.49..=0.60).contains(&expected),
+                (0.49..=0.60).contains(&limiting_axis),
                 "{width}x{height}: {span:?}"
             );
         }
