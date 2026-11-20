@@ -80,11 +80,15 @@ static __weak UIWindow *gameWindow;
 
 @end
 
+float batting_ios_screen_scale(void) {
+    return (float)gameWindow.windowScene.screen.scale;
+}
+
 int batting_ios_metrics(float *insets) {
     UIWindow *window = gameWindow;
     UIView *view = window.rootViewController.view;
     UIEdgeInsets safe = view ? view.safeAreaInsets : UIEdgeInsetsZero;
-    CGFloat scale = window.windowScene.screen.scale;
+    CGFloat scale = batting_ios_screen_scale();
     insets[0] = safe.left * scale;
     insets[1] = safe.top * scale;
     insets[2] = safe.right * scale;

@@ -3,7 +3,7 @@ use macroquad::prelude::*;
 
 use crate::batting::*;
 use crate::defense::{Defense, FIRST_BASE, FieldReturn, Fielder, SECOND_BASE, THIRD_BASE};
-use crate::display::DisplayProfile;
+use crate::display::{DisplayProfile, camera_layout_size};
 use crate::flight::GroundContact;
 use crate::park::Park;
 use crate::pitch::{Delivery, PitchForm};
@@ -19,7 +19,8 @@ const INK: Color = Color::from_rgba(9, 26, 34, 255);
 pub const AIM_GREEN: Color = Color::from_rgba(126, 245, 71, 255);
 
 pub fn batter_camera(display: DisplayProfile) -> Camera3D {
-    batting_view(screen_width(), screen_height(), display)
+    let size = camera_layout_size();
+    batting_view(size.x, size.y, display)
 }
 
 fn batting_view(width: f32, height: f32, display: DisplayProfile) -> Camera3D {
@@ -708,6 +709,30 @@ pub fn aim_movement(camera: &Camera3D, pixels: Vec2) -> Vec2 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retina_iphones_use_the_same_framing_as_their_logical_view_size() {
+        use crate::display::logical_view_size;
+        for logical in [vec2(390.0, 844.0), vec2(844.0, 390.0)] {
+            for backing_scale in [2.0, 3.0] {
+                let framebuffer = logical * backing_scale;
+                let measured = logical_view_size(framebuffer, 1.0, backing_scale);
+                let layout = batting_view(measured.x, measured.y, DisplayProfile::Mobile);
+                let expected = batting_view(logical.x, logical.y, DisplayProfile::Mobile);
+                assert_eq!(layout.position, expected.position);
+                assert_eq!(layout.fovy, expected.fovy);
+                assert_ne!(
+                    layout.fovy,
+                    batting_view(framebuffer.x, framebuffer.y, DisplayProfile::Mobile).fovy
+                );
+                // Also accept libraries that already report dimensions in points.
+                assert_eq!(
+                    logical_view_size(logical, backing_scale, backing_scale),
+                    logical
+                );
+            }
+        }
+    }
 
     #[test]
     fn batting_framing_shows_both_zone_corners_and_release_on_small_screens() {
