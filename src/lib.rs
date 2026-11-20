@@ -410,7 +410,7 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: PreviewTiming) {
         Phase::Flight(flight) => {
             let follow = flight.returning.as_ref().map_or_else(
                 || flight_camera(flight.position, flight.velocity, flight.elapsed),
-                return_camera,
+                |returning| return_camera(returning, &flight.runner),
             );
             set_camera(&follow);
             field(play.park);
@@ -480,7 +480,7 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: PreviewTiming) {
         }) => {
             let follow = view.returning.as_ref().map_or_else(
                 || flight_camera(view.ball, view.velocity, view.elapsed),
-                return_camera,
+                |returning| return_camera(returning, &view.runner),
             );
             set_camera(&follow);
             field(play.park);

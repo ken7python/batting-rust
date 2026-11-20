@@ -4,6 +4,7 @@ use crate::defense::{FIRST_BASE, SECOND_BASE, THIRD_BASE};
 
 const BASES: [Vec2; 4] = [Vec2::ZERO, FIRST_BASE, SECOND_BASE, THIRD_BASE];
 const ARRIVALS: [f64; 4] = [0.0, 3.95, 7.05, 10.30];
+pub const SLIDE_SECONDS: f64 = 0.34;
 const BOOST_DURATION: f64 = 0.30;
 const BOOST_EXTRA_SPEED: f64 = 0.12;
 
@@ -12,6 +13,7 @@ pub struct Runner {
     progress: f64,
     boost_remaining: f64,
     target: usize,
+    pub sliding: bool,
 }
 
 impl Default for Runner {
@@ -20,6 +22,7 @@ impl Default for Runner {
             progress: 0.0,
             boost_remaining: 0.0,
             target: 1,
+            sliding: false,
         }
     }
 }
@@ -36,6 +39,12 @@ impl Runner {
         self.target
     }
 
+    pub fn remaining_time(&self) -> f64 {
+        let remaining = (ARRIVALS[self.target] - self.progress).max(0.0);
+        let boosted = (remaining / (1.0 + BOOST_EXTRA_SPEED)).min(self.boost_remaining);
+        remaining - boosted * BOOST_EXTRA_SPEED
+    }
+
     pub fn next_leg_time(&self) -> f64 {
         let seconds = ARRIVALS[self.target + 1] - ARRIVALS[self.target];
         // An active boost permits a close attempt if the player keeps tapping.
@@ -49,6 +58,7 @@ impl Runner {
     pub fn start_next_leg(&mut self) {
         debug_assert!(self.reached() == self.target && self.target < 3);
         self.target += 1;
+        self.sliding = false;
     }
 
     pub fn tap(&mut self) {
@@ -78,7 +88,7 @@ impl Runner {
     }
 
     pub fn direction(&self) -> Vec2 {
-        let base = self.reached().min(2);
+        let base = self.target - 1;
         (BASES[base + 1] - BASES[base]).normalize()
     }
 }
