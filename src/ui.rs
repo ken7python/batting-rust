@@ -16,7 +16,7 @@ const CREAM: Color = Color::from_rgba(245, 241, 219, 255);
 const MUTED: Color = Color::from_rgba(179, 199, 183, 255);
 const AMBER: Color = Color::from_rgba(255, 201, 95, 255);
 const AIM_CALL_COLOR: Color = Color::from_rgba(161, 236, 154, 255);
-const PREVIEW_LEAD: f64 = 0.25;
+const PREVIEW_LEAD: f64 = 0.50;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PreviewTiming {
