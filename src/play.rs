@@ -149,7 +149,7 @@ fn batted_ball_result(outcome: Outcome, grade: Option<Grade>, flight: &Flight) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::batting::{CENTER, SWING_LEAD};
+    use crate::batting::{CENTER, SWING_LEAD, ZONE_MAX};
     use crate::pitch::{BreakSize, Delivery, PitchKind, PitchSpeed};
 
     fn fastball() -> Play {
@@ -218,5 +218,31 @@ mod tests {
         play.aim.press();
         assert!(play.aim.release(play.time));
         assert!(play.aim.live_swing().is_none());
+    }
+
+    #[test]
+    fn a_ball_just_outside_the_zone_cannot_start_baserunning() {
+        let mut play = fastball();
+        play.pitch = Pitch::new(
+            PitchKind::Fastball,
+            Delivery::default(),
+            vec2(ZONE_MAX.x + 0.05, CENTER.y),
+            PitchSpeed::Normal,
+            0.5,
+            BreakSize::Normal,
+        );
+        play.aim.press();
+        play.aim.drag(Vec2::X);
+        play.advance(play.pitch.duration - SWING_LEAD - play.time);
+        assert!(play.aim.release(play.time));
+        play.advance(play.pitch.end_time() - play.time + 0.001);
+        assert!(matches!(
+            play.phase,
+            Phase::Result(ResultCard {
+                outcome: Outcome::Whiff,
+                fielding: None,
+                ..
+            })
+        ));
     }
 }

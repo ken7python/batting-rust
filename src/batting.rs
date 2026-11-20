@@ -36,7 +36,7 @@ pub fn grade(swing: Swing, arrival: f64, crossing: Vec2) -> Grade {
     let timing = swing.time + SWING_LEAD - arrival;
     let offset = swing.aim - crossing;
     let distance = (offset / MEET_RADIUS).length();
-    let contact = if timing.abs() > HIT_TIMING + 1e-9 || distance > 1.0 {
+    let contact = if !in_zone(crossing) || timing.abs() > HIT_TIMING + 1e-9 || distance > 1.0 {
         Contact::Miss
     } else if timing.abs() <= BARREL_TIMING + 1e-9 && (offset / BARREL_RADIUS).length() <= 1.0 {
         Contact::Barrel
@@ -82,8 +82,7 @@ impl Aim {
 
     pub fn drag(&mut self, movement: Vec2) {
         if self.held {
-            let margin = vec2(0.65, 0.49);
-            self.point = (self.point + movement).clamp(ZONE_MIN - margin, ZONE_MAX + margin);
+            self.point = (self.point + movement).clamp(ZONE_MIN, ZONE_MAX);
         }
     }
 
@@ -159,14 +158,28 @@ mod tests {
     }
 
     #[test]
-    fn held_aim_can_sweep_past_every_edge_of_the_zone() {
+    fn held_aim_stops_at_every_edge_of_the_zone() {
         let mut aim = Aim::default();
         aim.press();
         aim.drag(vec2(4.0, 4.0));
-        assert!(aim.point.cmpgt(ZONE_MAX).all());
+        assert_eq!(aim.point, ZONE_MAX);
         aim.drag(vec2(-8.0, -8.0));
-        assert!(aim.point.cmplt(ZONE_MIN).all());
+        assert_eq!(aim.point, ZONE_MIN);
+        aim.drag(vec2(0.0, 0.2));
+        assert!((aim.point.y - (ZONE_MIN.y + 0.2)).abs() < 1e-6);
         aim.release(0.4);
         assert_eq!(aim.live_swing().unwrap().aim, aim.point);
+    }
+
+    #[test]
+    fn an_edge_swing_meets_a_pitch_clipping_the_zone_but_misses_a_ball() {
+        let swing = Swing {
+            time: 0.405,
+            aim: vec2(ZONE_MAX.x, CENTER.y),
+        };
+        for (distance, expected) in [(0.03, Contact::Barrel), (0.05, Contact::Miss)] {
+            let crossing = swing.aim + Vec2::X * distance;
+            assert_eq!(grade(swing, 0.48, crossing).contact, expected);
+        }
     }
 }
