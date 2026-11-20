@@ -134,6 +134,9 @@ fn window_conf() -> Conf {
         #[cfg(target_os = "ios")]
         platform: macroquad::miniquad::conf::Platform {
             apple_gfx_api: macroquad::miniquad::conf::AppleGfxApi::Metal,
+            // MTKView owns the frame clock. Keep Miniquad's worker waiting for
+            // events instead of flooding the main queue with redraw requests.
+            blocking_event_loop: true,
             ..Default::default()
         },
         ..Default::default()
