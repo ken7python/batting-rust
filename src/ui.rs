@@ -432,7 +432,7 @@ impl<'a> Ui<'a> {
             ),
             Mode::Practice { .. } => ("練習", format!("{shown_pitch:02} 球")),
         };
-        self.panel(Rect::new(x, y, 288.0 * s, 81.0 * s));
+        self.panel(Rect::new(x, y, 276.0 * s, 81.0 * s));
         self.text(mode, x + 14.0 * s, y + 25.0 * s, 16.0, MUTED);
         self.text(
             &format!("球速  {}", session.speed.label()),

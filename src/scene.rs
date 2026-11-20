@@ -18,8 +18,15 @@ const INK: Color = Color::from_rgba(9, 26, 34, 255);
 pub const AIM_GREEN: Color = Color::from_rgba(126, 245, 71, 255);
 
 pub fn batter_camera() -> Camera3D {
+    batting_view(screen_width(), screen_height())
+}
+
+fn batting_view(width: f32, height: f32) -> Camera3D {
     let mut camera = field_camera();
-    camera.fovy = batter_fov(screen_width(), screen_height());
+    camera.fovy = batter_fov(width, height);
+    // Lower the eye line on short screens to keep the release and zone close vertically.
+    camera.position.y -= 0.50 * ((620.0 - height) / 210.0).clamp(0.0, 1.0);
+    camera.target.y = batter_target_height(&camera);
     camera
 }
 
@@ -29,6 +36,13 @@ fn batter_fov(width: f32, height: f32) -> f32 {
     let half_fov = 23.5_f32.to_radians();
     (2.0 * (half_fov.tan() * height / focal_height).atan())
         .clamp(15_f32.to_radians(), 68_f32.to_radians())
+}
+
+fn batter_target_height(camera: &Camera3D) -> f32 {
+    // Anchor the zone near 58% of the screen height, even when the phone zooms in.
+    let down_to_zone = ((camera.position.y - CENTER.y) / camera.position.z).atan();
+    let down_to_target = down_to_zone - ((camera.fovy * 0.5).tan() * 0.16).atan();
+    camera.position.y - down_to_target.tan() * (camera.position.z - camera.target.z)
 }
 
 pub fn marker_scale(width: f32, height: f32) -> f32 {
@@ -647,6 +661,31 @@ pub fn aim_movement(camera: &Camera3D, pixels: Vec2) -> Vec2 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn batting_framing_shows_both_zone_corners_and_release_on_small_screens() {
+        for (width, height) in [
+            (390.0, 844.0),
+            (844.0, 390.0),
+            (568.0, 320.0),
+            (320.0, 568.0),
+            (1120.0, 720.0),
+        ] {
+            let camera = batting_view(width, height);
+            let view = Mat4::perspective_rh_gl(camera.fovy, width / height, 0.01, camera.z_far)
+                * Mat4::look_at_rh(camera.position, camera.target, camera.up);
+            for point in [
+                on_plate(ZONE_MIN),
+                on_plate(ZONE_MAX),
+                Delivery::default().release(),
+            ] {
+                let clip = view * point.extend(1.0);
+                assert!(clip.w > 0.0);
+                assert!((clip.x / clip.w).abs() < 0.9);
+                assert!((clip.y / clip.w).abs() < 0.9, "{width}x{height} {point:?}");
+            }
+        }
+    }
 
     #[test]
     fn smaller_screens_get_a_longer_batting_camera_focal_length() {
