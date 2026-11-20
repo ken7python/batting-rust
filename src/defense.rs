@@ -6,7 +6,7 @@ pub const FIRST_BASE: Vec2 = vec2(19.4, -19.4);
 pub const SECOND_BASE: Vec2 = vec2(0.0, -38.8);
 pub const THIRD_BASE: Vec2 = vec2(-19.4, -19.4);
 
-const INFIELDER_SPEED: f32 = 5.6;
+const INFIELDER_SPEED: f32 = 6.0;
 const OUTFIELDER_SPEED: f32 = 6.25;
 const INFIELDER_THROW_SPEED: f32 = 27.0;
 const OUTFIELDER_THROW_SPEED: f32 = 30.0;
@@ -137,8 +137,8 @@ impl Defense {
             .into_iter()
             .filter_map(|fielder| {
                 let reach: f32 = match (fielder.infield(), airborne) {
-                    (true, true) => 1.22,
-                    (true, false) => 1.10,
+                    (true, true) => 1.30,
+                    (true, false) => 1.20,
                     (false, _) => 0.94,
                 };
                 let distance = self.position(fielder).distance_squared(position);
