@@ -30,11 +30,8 @@ impl PreviewTiming {
         }
     }
 
-    fn next(self) -> Self {
-        match self {
-            Self::BeforeRelease => Self::AfterRelease,
-            Self::AfterRelease => Self::BeforeRelease,
-        }
+    pub fn visible(self, pitch_time: f64) -> bool {
+        self == Self::BeforeRelease || pitch_time >= 0.0
     }
 }
 
@@ -55,7 +52,7 @@ pub enum Action {
     Practice,
     Pitch,
     Speed(PitchSpeed),
-    Preview,
+    Preview(PreviewTiming),
     Sensitivity,
     Hand,
     Form,
@@ -117,7 +114,7 @@ impl Settings {
         match action {
             Action::Pitch => self.pitch = (self.pitch + 1) % (PitchKind::ALL.len() + 1),
             Action::Speed(speed) => self.speed = speed,
-            Action::Preview => self.preview = self.preview.next(),
+            Action::Preview(timing) => self.preview = timing,
             Action::Sensitivity => self.sensitivity = (self.sensitivity + 1) % 3,
             Action::Hand => {
                 self.delivery.hand = if self.delivery.hand == ThrowingHand::Right {
@@ -348,11 +345,15 @@ impl<'a> Ui<'a> {
             .map_or("ランダム", PitchKind::label);
         let sensitivity = ["低い", "標準", "高い"][settings.sensitivity];
         let options = [
-            (format!("球種  {pitch}"), Action::Pitch),
             (
-                format!("予測  {}", settings.preview.label()),
-                Action::Preview,
+                format!("予測  {}", PreviewTiming::BeforeRelease.label()),
+                Action::Preview(PreviewTiming::BeforeRelease),
             ),
+            (
+                format!("予測  {}", PreviewTiming::AfterRelease.label()),
+                Action::Preview(PreviewTiming::AfterRelease),
+            ),
+            (format!("球種  {pitch}"), Action::Pitch),
             (format!("感度  {sensitivity}"), Action::Sensitivity),
             (settings.delivery.hand.label().into(), Action::Hand),
             (settings.delivery.form.label().into(), Action::Form),
@@ -388,18 +389,19 @@ impl<'a> Ui<'a> {
             ),
         ];
         let (x, y, width) = if wide {
-            (358.0, 20.0, 196.0)
+            (358.0, 14.0, 196.0)
         } else {
-            (20.0, 328.0, 192.0)
+            (20.0, 327.0, 192.0)
         };
         for (index, (label, choice)) in options.into_iter().enumerate() {
             let bounds = rect(
                 x + (index % 2) as f32 * (width + 8.0),
-                y + (index / 2) as f32 * 56.0,
+                y + (index / 2) as f32 * 50.0,
                 width,
-                48.0,
+                44.0,
             );
-            if self.button(bounds, &label, false) {
+            let selected = matches!(choice, Action::Preview(timing) if timing == settings.preview);
+            if self.button(bounds, &label, selected) {
                 action = Some(choice);
             }
         }
@@ -972,6 +974,18 @@ fn feedback_label(grade: Grade) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preview_modes_toggle_at_the_release_instant() {
+        let mut settings = Settings::default();
+        assert!(settings.preview.visible(-0.01));
+        settings.change(Action::Preview(PreviewTiming::AfterRelease));
+        assert!(!settings.preview.visible(-0.01));
+        assert!(settings.preview.visible(0.0));
+        assert!(settings.preview.visible(0.01));
+        settings.change(Action::Preview(PreviewTiming::BeforeRelease));
+        assert!(settings.preview.visible(-0.01));
+    }
 
     #[test]
     fn menus_fit_small_phones_in_both_orientations_with_usable_targets() {

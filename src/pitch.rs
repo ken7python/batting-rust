@@ -4,7 +4,7 @@ use crate::batting::{BALL_RADIUS, CATCH_DELAY, ZONE_MAX, ZONE_MIN};
 
 const BASE_ARC: Vec2 = vec2(0.0, 0.32);
 const RELEASE_DELAY_MIN: f64 = 0.25;
-const RELEASE_DELAY_MAX: f64 = 0.75;
+const RELEASE_DELAY_MAX: f64 = 1.20;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum PitchSpeed {
