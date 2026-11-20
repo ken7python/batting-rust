@@ -654,6 +654,12 @@ pub fn bat(time: f64, aim: &Aim) {
     }
 }
 
+pub fn meet_cursor_radius(camera: &Camera3D) -> f32 {
+    let a = project(camera, on_plate(ZONE_MIN));
+    let b = project(camera, on_plate(ZONE_MAX));
+    (b.x - a.x).abs() * 0.14
+}
+
 pub fn reticle(camera: &Camera3D, aim: &Aim) {
     let a = project(camera, on_plate(ZONE_MIN));
     let b = project(camera, on_plate(ZONE_MAX));
@@ -671,7 +677,7 @@ pub fn reticle(camera: &Camera3D, aim: &Aim) {
     draw_rectangle(left + width - thickness, top, thickness, height, color);
     let p = project(camera, on_plate(aim.point));
     // Macroquad draws the stroke outside its input radius.
-    let radius = projected_width * 0.14;
+    let radius = meet_cursor_radius(camera);
     let stroke = radius * 0.24;
     let tint = if aim.held {
         Color::from_rgba(181, 255, 102, 255)
