@@ -13,7 +13,7 @@ mod ui;
 use defense::Defense;
 use flight::Outcome;
 use macroquad::input::utils::{register_input_subscriber, repeat_all_miniquad_input};
-use macroquad::miniquad::EventHandler;
+use macroquad::miniquad::{EventHandler, TouchPhase};
 use macroquad::prelude::*;
 use park::Park;
 use pitch::Delivery;
@@ -41,6 +41,7 @@ enum BatInput {
     Press(Vec2),
     Drag(Vec2),
     Release,
+    Cancel,
 }
 
 impl EventHandler for FrameInput {
@@ -77,6 +78,14 @@ impl EventHandler for FrameInput {
             self.mouse_motion_event(x, y);
             self.drag_from = None;
             self.actions.push(BatInput::Release);
+        }
+    }
+
+    fn touch_event(&mut self, phase: TouchPhase, _id: u64, _x: f32, _y: f32) {
+        // Macroquad already supplies mouse events for touch starts, moves and ends.
+        if phase == TouchPhase::Cancelled {
+            self.drag_from = None;
+            self.actions.push(BatInput::Cancel);
         }
     }
 }
@@ -137,12 +146,22 @@ async fn main() {
                                 sounds.swing();
                             }
                         }
+                        BatInput::Cancel => aim.held = false,
                         _ => {}
                     }
                 }
                 if !is_mouse_button_down(MouseButton::Left) {
                     aim.held = false;
                 }
+            } else if !session.paused
+                && let Phase::Flight(flight) = &mut session.play.phase
+                && flight.can_boost_runner()
+                && input.actions.iter().any(|action| {
+                    matches!(*action, BatInput::Press(point)
+                        if !ui.pause_rect().contains(point / screen_dpi_scale()))
+                })
+            {
+                flight.runner.tap();
             }
             let was_pitched = matches!(session.play.phase, Phase::Pitch);
             let was_winding_up = was_pitched && session.play.time < 0.0;

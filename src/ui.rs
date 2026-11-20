@@ -391,7 +391,7 @@ impl<'a> Ui<'a> {
             if let Some(view) = &card.fielding
                 && view.returning.is_some()
             {
-                self.runner_diamond(&view.runner);
+                self.runner_diamond(&view.runner, false);
             }
         } else if let Phase::Flight(flight) = &session.play.phase {
             let h = screen_height();
@@ -429,7 +429,7 @@ impl<'a> Ui<'a> {
             );
             self.text(&detail, x + 13.0 * s, h - 30.0 * s, 26.0, CREAM);
             if !flight.cleared_fence {
-                self.runner_diamond(&flight.runner);
+                self.runner_diamond(&flight.runner, !session.paused && flight.can_boost_runner());
             }
         } else if matches!(session.play.phase, Phase::Pitch) {
             let hint = if session.play.time < 0.0 {
@@ -480,7 +480,7 @@ impl<'a> Ui<'a> {
         action
     }
 
-    fn runner_diamond(&mut self, runner: &Runner) {
+    fn runner_diamond(&mut self, runner: &Runner, can_boost: bool) {
         let s = self.scale;
         let home = vec2(screen_width() - 67.0 * s, screen_height() - 94.0 * s);
         let corner = 23.0 * s;
@@ -513,9 +513,26 @@ impl<'a> Ui<'a> {
         let marker = home + runner.position() * (corner / crate::defense::FIRST_BASE.x);
         self.draws.push(Draw::Dot(
             marker,
-            5.0 * s,
-            Color::from_rgba(232, 116, 67, 255),
+            if can_boost && runner.boosted() {
+                7.0
+            } else {
+                5.0
+            } * s,
+            if can_boost && runner.boosted() {
+                AMBER
+            } else {
+                Color::from_rgba(232, 116, 67, 255)
+            },
         ));
+        if can_boost {
+            self.text(
+                "タップで加速",
+                panel.x,
+                panel.bottom() + 18.0 * s,
+                14.0,
+                CREAM,
+            );
+        }
     }
 
     fn feedback(&mut self, session: &Session, result: &ResultCard) {
