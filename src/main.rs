@@ -4,6 +4,7 @@ mod flight;
 mod park;
 mod pitch;
 mod play;
+mod runner;
 mod scene;
 mod session;
 mod sound;
@@ -280,6 +281,9 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: bool) {
             set_camera(&follow);
             field(play.park);
             fielders(&flight.defense, flight.elapsed, flight.returning.as_ref());
+            if !flight.cleared_fence {
+                batter_runner(&flight.runner, flight.elapsed, true);
+            }
             if let Some(returning) = flight.returning {
                 if returning.airborne() {
                     throw_marker = Some(project(&follow, flight.position));
@@ -309,6 +313,7 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: bool) {
             set_camera(&follow);
             field(play.park);
             fielders(&view.defense, view.elapsed, view.returning.as_ref());
+            batter_runner(&view.runner, view.elapsed, false);
             ball(view.ball);
         }
         _ => {

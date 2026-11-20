@@ -4,7 +4,7 @@ use crate::park::Park;
 
 pub const FIRST_BASE: Vec2 = vec2(19.4, -19.4);
 pub const SECOND_BASE: Vec2 = vec2(0.0, -38.8);
-pub const RUNNER_TO_FIRST: f32 = 3.95;
+pub const THIRD_BASE: Vec2 = vec2(-19.4, -19.4);
 
 pub const FIELDING_REACH: f32 = 0.94;
 
@@ -193,6 +193,10 @@ impl FieldReturn {
         };
         defense.move_toward(self.receiver, self.target, INFIELDER_SPEED * moved);
         self.elapsed += dt;
+        self.arrived()
+    }
+
+    pub fn arrived(&self) -> bool {
         self.elapsed >= self.transfer + self.travel
     }
 
