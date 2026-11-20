@@ -116,7 +116,9 @@ impl Flight {
         };
         let horizontal =
             ((grade.timing / HIT_TIMING) as f32 * 1.05 + grade.offset.x * 0.48).clamp(-1.18, 1.18);
-        let vertical = (0.43 - grade.offset.y * 3.1).clamp(-0.16, 0.83);
+        // Grade offsets are cursor minus ball, so a ball above the cursor lifts.
+        let ball_above_cursor = -grade.offset.y;
+        let vertical = (0.43 + ball_above_cursor * 3.1).clamp(-0.16, 0.83);
         let velocity = vec3(
             horizontal.sin() * vertical.cos(),
             vertical.sin(),
@@ -468,6 +470,25 @@ mod tests {
             }
         }
         panic!("flight did not finish");
+    }
+
+    #[test]
+    fn contact_above_the_cursor_lifts_and_contact_below_sends_the_ball_down() {
+        let flight = |offset_y| {
+            Flight::new(
+                CENTER,
+                Grade {
+                    contact: Contact::Touch,
+                    timing: 0.0,
+                    offset: vec2(0.0, offset_y),
+                },
+                Park::Central,
+            )
+        };
+        let above = flight(-0.15);
+        let below = flight(0.15);
+        assert!(above.velocity.y > flight(0.0).velocity.y);
+        assert!(below.velocity.y < 0.0);
     }
 
     #[test]
