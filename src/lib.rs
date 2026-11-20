@@ -407,7 +407,13 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: PreviewTiming) {
     match &play.phase {
         Phase::Flight(flight) => {
             let follow = flight.returning.as_ref().map_or_else(
-                || flight_camera(flight.position, flight.velocity, flight.elapsed),
+                || {
+                    if flight.confident {
+                        home_run_camera(flight.position, flight.velocity, flight.elapsed)
+                    } else {
+                        flight_camera(flight.position, flight.velocity, flight.elapsed)
+                    }
+                },
                 |returning| return_camera(returning, &flight.runner),
             );
             set_camera(&follow);
@@ -478,7 +484,13 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: PreviewTiming) {
             ..
         }) => {
             let follow = view.returning.as_ref().map_or_else(
-                || flight_camera(view.ball, view.velocity, view.elapsed),
+                || {
+                    if *outcome == Outcome::Homer {
+                        home_run_camera(view.ball, view.velocity, view.elapsed)
+                    } else {
+                        flight_camera(view.ball, view.velocity, view.elapsed)
+                    }
+                },
                 |returning| return_camera(returning, &view.runner),
             );
             set_camera(&follow);
@@ -494,7 +506,7 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: PreviewTiming) {
                 catch,
                 play.result_time as f32,
             );
-            if *outcome != Outcome::Foul {
+            if !matches!(outcome, Outcome::Foul | Outcome::Homer) {
                 batter_runner(&view.runner, view.elapsed, false);
             }
             if let Some(contact) = view.ground_contact {

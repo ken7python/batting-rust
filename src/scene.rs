@@ -61,7 +61,22 @@ fn field_camera() -> Camera3D {
 }
 
 pub fn flight_camera(ball: Vec3, velocity: Vec3, elapsed: f32) -> Camera3D {
-    let mut camera = batter_camera();
+    follow_flight(batter_camera(), ball, velocity, elapsed)
+}
+
+pub fn home_run_camera(ball: Vec3, velocity: Vec3, elapsed: f32) -> Camera3D {
+    track_home_run(batter_camera(), ball, velocity, elapsed)
+}
+
+fn track_home_run(camera: Camera3D, ball: Vec3, velocity: Vec3, elapsed: f32) -> Camera3D {
+    let mut camera = follow_flight(camera, ball, velocity, elapsed);
+    // Aim at the ball immediately while the camera moves out of the batter's box.
+    let lead = ((elapsed - 0.20) / 0.50).clamp(0.0, 1.0) * 0.65;
+    camera.target = ball.lerp(camera.target, lead);
+    camera
+}
+
+fn follow_flight(mut camera: Camera3D, ball: Vec3, velocity: Vec3, elapsed: f32) -> Camera3D {
     let direction = vec3(velocity.x, 0.0, velocity.z).normalize_or_zero();
     let blend = (elapsed / 0.55).clamp(0.0, 1.0);
     let blend = blend * blend * (3.0 - 2.0 * blend);
@@ -683,6 +698,42 @@ mod tests {
                 assert!(clip.w > 0.0);
                 assert!((clip.x / clip.w).abs() < 0.9);
                 assert!((clip.y / clip.w).abs() < 0.9, "{width}x{height} {point:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn no_doubt_home_run_stays_in_frame_from_contact_to_landing() {
+        use crate::flight::{Flight, Outcome, STEP};
+        for size in [(390.0, 844.0), (844.0, 390.0), (1120.0, 720.0)] {
+            let mut flight = Flight::new(
+                CENTER,
+                Grade {
+                    timing: 0.0,
+                    offset: Vec2::ZERO,
+                    contact: Contact::Barrel,
+                },
+                Park::Central,
+            );
+            assert!(flight.confident);
+            loop {
+                let camera = track_home_run(
+                    batting_view(size.0, size.1),
+                    flight.position,
+                    flight.velocity,
+                    flight.elapsed,
+                );
+                let matrix =
+                    Mat4::perspective_rh_gl(camera.fovy, size.0 / size.1, 0.01, camera.z_far)
+                        * Mat4::look_at_rh(camera.position, camera.target, camera.up);
+                let clip = matrix * flight.position.extend(1.0);
+                assert!(clip.w > 0.0);
+                assert!(clip.truncate().abs().max_element() < clip.w);
+                if let Some(outcome) = flight.advance(STEP) {
+                    assert_eq!(outcome, Outcome::Homer);
+                    break;
+                }
+                assert!(flight.elapsed < 12.0);
             }
         }
     }
