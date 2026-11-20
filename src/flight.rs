@@ -6,6 +6,8 @@ use crate::park::Park;
 use crate::runner::Runner;
 
 pub const STEP: f64 = 1.0 / 120.0;
+// Speed up ball travel without increasing its range or speeding up runners.
+const BALL_TEMPO: f32 = 1.35;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Outcome {
@@ -94,6 +96,7 @@ pub struct Flight {
     pub velocity: Vec3,
     pub elapsed: f32,
     pub strong: bool,
+    pub confident: bool,
     pub home_run: Option<HomeRun>,
     pub defense: Defense,
     pub returning: Option<FieldReturn>,
@@ -122,15 +125,19 @@ impl Flight {
         let horizontal =
             ((grade.timing / HIT_TIMING) as f32 * 1.05 + grade.offset.x * 0.48).clamp(-1.18, 1.18);
         let vertical = (0.43 - grade.offset.y * 3.1).clamp(-0.16, 0.83);
+        let velocity = vec3(
+            horizontal.sin() * vertical.cos(),
+            vertical.sin(),
+            -horizontal.cos() * vertical.cos(),
+        ) * speed;
+        let landing = airborne_landing(crossing.extend(0.0), velocity);
+        let confident = strong && fair(landing) && landing.xz().length() >= 115.0;
         Self {
             position: crossing.extend(0.0),
-            velocity: vec3(
-                horizontal.sin() * vertical.cos(),
-                vertical.sin(),
-                -horizontal.cos() * vertical.cos(),
-            ) * speed,
+            velocity,
             elapsed: 0.0,
             strong,
+            confident,
             home_run: None,
             defense: Defense::new(park),
             returning: None,
@@ -157,6 +164,7 @@ impl Flight {
 
     pub fn can_boost_runner(&self) -> bool {
         self.home_run.is_none()
+            && !self.confident
             && self.runner.moving()
             && !self.returning.is_some_and(|returning| returning.arrived())
     }
@@ -165,7 +173,9 @@ impl Flight {
         let dt = STEP as f32;
         self.elapsed += dt;
         let was_running = self.runner.moving();
-        if self.home_run.is_none() {
+        if self.confident {
+            self.runner.advance(STEP * 0.38);
+        } else if self.home_run.is_none() {
             self.runner.advance(STEP);
         }
         let result = if self.returning.is_some() {
@@ -257,8 +267,9 @@ impl Flight {
             return None;
         }
         let old = self.position;
-        self.velocity = air_velocity(self.velocity, dt);
-        let next = old + self.velocity * dt;
+        let ball_dt = dt * BALL_TEMPO;
+        self.velocity = air_velocity(self.velocity, ball_dt);
+        let next = old + self.velocity * ball_dt;
 
         let (fence_radius, fence_height) = self.park.fence();
         let radius_sq = |p: Vec3| p.x * p.x + p.z * p.z;
@@ -397,7 +408,7 @@ fn ground_fraction(old: Vec3, next: Vec3) -> Option<f32> {
 }
 
 fn airborne_landing(mut pos: Vec3, mut velocity: Vec3) -> Vec3 {
-    let dt = STEP as f32;
+    let dt = STEP as f32 * BALL_TEMPO;
     loop {
         velocity = air_velocity(velocity, dt);
         let next = pos + velocity * dt;
@@ -425,6 +436,24 @@ mod tests {
             }
         }
         panic!("flight did not finish");
+    }
+
+    #[test]
+    fn a_big_homer_walks_while_the_ball_travels_at_full_tempo() {
+        let mut flight = Flight::new(
+            CENTER,
+            Grade {
+                contact: Contact::Barrel,
+                timing: 0.0,
+                offset: Vec2::ZERO,
+            },
+            Park::Central,
+        );
+        assert!(flight.confident);
+        flight.advance(0.5);
+        assert!(flight.runner.position().length() > 0.5);
+        assert!(flight.runner.position().length() < 2.0);
+        assert!(flight.position.z < -30.0);
     }
 
     #[test]
@@ -478,6 +507,7 @@ mod tests {
             (Park::Central, Outcome::HardFair),
         ] {
             let mut flight = Flight::new(CENTER, grade, park);
+            flight.confident = false; // This fixture replaces the initially predicted homer.
             flight.position = vec3(0.0, 2.8, -76.5);
             flight.velocity = vec3(0.0, 0.0, -31.0);
             let result = (0..1200).find_map(|_| flight.advance(STEP));
@@ -528,7 +558,7 @@ mod tests {
     fn a_fly_to_the_center_fielder_is_caught_but_a_gap_shot_is_a_hit() {
         for (position, velocity, expected) in [
             (
-                vec3(3.8, 5.5, -53.0),
+                vec3(3.8, 7.5, -53.0),
                 vec3(0.0, -2.0, -7.0),
                 Outcome::FlyOut(Fielder::Center),
             ),
@@ -663,8 +693,8 @@ mod tests {
     #[test]
     fn runners_hold_at_second_or_contest_third_in_both_parks() {
         for (park, timing, offset) in [
-            (Park::Central, -0.060, vec2(0.025, 0.096)),
-            (Park::Sunset, -0.060, vec2(0.025, 0.096)),
+            (Park::Central, -0.060, vec2(0.025, 0.089)),
+            (Park::Sunset, -0.060, vec2(0.025, 0.089)),
         ] {
             let hit = Grade {
                 contact: Contact::Touch,
