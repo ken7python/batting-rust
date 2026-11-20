@@ -291,6 +291,7 @@ impl Pitch {
     pub fn random(
         fixed: Option<PitchKind>,
         opening: bool,
+        strike: bool,
         speed: PitchSpeed,
         delivery: Delivery,
         mix: PitchMix,
@@ -303,7 +304,7 @@ impl Pitch {
                 pool[rand::gen_range(0, pool.len())]
             })
         };
-        let crossing = if rand::gen_range(0.0, 1.0) < 0.7 {
+        let crossing = if strike {
             vec2(
                 rand::gen_range(ZONE_MIN.x, ZONE_MAX.x),
                 rand::gen_range(ZONE_MIN.y, ZONE_MAX.y),
@@ -396,11 +397,11 @@ mod tests {
     use crate::batting::CENTER;
 
     #[test]
-    fn random_pitches_are_mostly_strikes() {
-        let mut strikes = 0;
+    fn random_pitches_match_the_requested_call() {
         for i in 0..10000 {
             let pitch = Pitch::random(
                 None,
+                i % 3 == 0,
                 i % 2 == 0,
                 PitchSpeed::Normal,
                 Delivery::default(),
@@ -410,15 +411,13 @@ mod tests {
             let p = pitch.crossing;
             let inside =
                 p.x >= ZONE_MIN.x && p.x <= ZONE_MAX.x && p.y >= ZONE_MIN.y && p.y <= ZONE_MAX.y;
-            if inside {
-                strikes += 1;
-            } else {
+            assert_eq!(crate::batting::in_zone(p), i % 2 == 0);
+            if !inside {
                 let distance = (p - p.clamp(ZONE_MIN, ZONE_MAX)).length();
                 assert!(distance > BALL_RADIUS && distance <= 0.071);
             }
             assert!(pitch.bounce_time.is_none());
         }
-        assert!((6500..7500).contains(&strikes));
     }
 
     #[test]
@@ -438,12 +437,20 @@ mod tests {
         assert_eq!(Repertoire::Basic.pool().len(), 5);
         assert_eq!(Repertoire::Varied.pool().len(), 11);
         for _ in 0..20 {
-            let random = Pitch::random(None, false, PitchSpeed::Normal, Delivery::default(), mix);
+            let random = Pitch::random(
+                None,
+                false,
+                true,
+                PitchSpeed::Normal,
+                Delivery::default(),
+                mix,
+            );
             assert!(mix.repertoire.pool().contains(&random.kind));
         }
         let fixed = Pitch::random(
             Some(PitchKind::Knuckleball),
             false,
+            true,
             PitchSpeed::Normal,
             Delivery::default(),
             mix,
