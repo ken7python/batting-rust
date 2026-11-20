@@ -13,6 +13,9 @@ static __weak UIWindow *gameWindow;
 @implementation BattingMetalDelegate
 
 - (void)drawInMTKView:(MTKView *)view {
+    if (view.window.windowScene.activationState != UISceneActivationStateForegroundActive) {
+        return;
+    }
     [self.renderer drawInMTKView:view];
 }
 
@@ -56,6 +59,11 @@ static __weak UIWindow *gameWindow;
         self.metalDelegate.renderer = metalView.delegate;
         metalView.delegate = self.metalDelegate;
         metalView.depthStencilPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
+        // UIKit drives rendering through its display link, including under LLDB.
+        // Miniquad's event worker no longer schedules every frame on the main queue.
+        metalView.enableSetNeedsDisplay = NO;
+        metalView.preferredFramesPerSecond = 60;
+        metalView.paused = YES;
     }
     self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
     self.window.rootViewController = controller;
@@ -69,11 +77,15 @@ static __weak UIWindow *gameWindow;
     // them to Miniquad so its rendering loop resumes and pauses correctly.
     UIApplication *app = UIApplication.sharedApplication;
     [app.delegate applicationDidBecomeActive:app];
+    MTKView *view = (MTKView *)self.window.rootViewController.view;
+    view.paused = NO;
 }
 
 - (void)sceneWillResignActive:(UIScene *)scene {
     (void)scene;
     needsPause = YES;
+    MTKView *view = (MTKView *)self.window.rootViewController.view;
+    view.paused = YES;
     UIApplication *app = UIApplication.sharedApplication;
     [app.delegate applicationWillResignActive:app];
 }

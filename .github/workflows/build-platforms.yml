@@ -105,7 +105,13 @@ jobs:
           name: ios-simulator
           path: dist/ios/batting-ios-simulator.zip
           if-no-files-found: error
-      - run: ./scripts/smoke-ios.sh
+      - name: Build and launch the Xcode Debug configuration
+        run: |
+          xcodebuild -project ios/Batting.xcodeproj -scheme Batting -configuration Debug -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath "$PWD/target/xcode/debug" \
+            "CONFIGURATION_BUILD_DIR=$PWD/dist/ios/debug" CODE_SIGNING_ALLOWED=NO build
+          BATTING_IOS_APP=dist/ios/debug/Batting.app \
+            SIMCTL_CHILD_MTL_DEBUG_LAYER=1 SIMCTL_CHILD_MTL_CAPTURE_ENABLED=1 ./scripts/smoke-ios.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:

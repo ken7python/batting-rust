@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-app=dist/ios/sim/Batting.app
+app="${BATTING_IOS_APP:-dist/ios/sim/Batting.app}"
 bundle_id=com.ken7python.batting.ios
 for family in iPhone iPad; do
     started=false
