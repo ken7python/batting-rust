@@ -4,15 +4,28 @@ use crate::defense::{FIRST_BASE, SECOND_BASE, THIRD_BASE};
 
 const BASES: [Vec2; 4] = [Vec2::ZERO, FIRST_BASE, SECOND_BASE, THIRD_BASE];
 const ARRIVALS: [f64; 4] = [0.0, 3.95, 6.70, 9.45];
+const BOOST_DURATION: f64 = 0.30;
+const BOOST_EXTRA_SPEED: f64 = 0.12;
 
 #[derive(Clone, Copy, Default)]
 pub struct Runner {
     progress: f64,
+    boost_remaining: f64,
 }
 
 impl Runner {
     pub fn advance(&mut self, dt: f64) {
-        self.progress = (self.progress + dt).min(ARRIVALS[3]);
+        let boosted = dt.min(self.boost_remaining);
+        self.boost_remaining -= boosted;
+        self.progress = (self.progress + dt + boosted * BOOST_EXTRA_SPEED).min(ARRIVALS[3]);
+    }
+
+    pub fn tap(&mut self) {
+        self.boost_remaining = BOOST_DURATION;
+    }
+
+    pub fn boosted(&self) -> bool {
+        self.moving() && self.boost_remaining > 1e-9
     }
 
     pub fn reached(&self) -> usize {
@@ -59,5 +72,18 @@ mod tests {
         assert_eq!(runner.reached(), 3);
         assert_eq!(runner.position(), THIRD_BASE);
         assert!(!runner.moving());
+    }
+
+    #[test]
+    fn taps_refresh_the_boost_and_cannot_stack_speed_or_survive_a_hold() {
+        let mut runner = Runner::default();
+        runner.tap();
+        runner.tap();
+        runner.advance(0.20);
+        assert!((runner.progress - 0.224).abs() < 1e-9);
+        runner.tap();
+        runner.advance(0.50);
+        assert!((runner.progress - 0.760).abs() < 1e-9);
+        assert!(!runner.boosted());
     }
 }

@@ -109,6 +109,12 @@ impl Flight {
         None
     }
 
+    pub fn can_boost_runner(&self) -> bool {
+        !self.cleared_fence
+            && self.runner.moving()
+            && !self.returning.is_some_and(|returning| returning.arrived())
+    }
+
     fn step(&mut self) -> Option<Outcome> {
         let dt = STEP as f32;
         self.elapsed += dt;
@@ -463,6 +469,30 @@ mod tests {
         assert_eq!(flight.fielded_hit(Fielder::Center), Some(Outcome::Double));
         flight.runner.advance(2.75);
         assert_eq!(flight.fielded_hit(Fielder::Center), Some(Outcome::Triple));
+    }
+
+    #[test]
+    fn repeated_taps_turn_a_deep_double_into_a_triple_in_both_parks() {
+        for (park, timing, offset) in [
+            (Park::Central, -0.030, vec2(0.0, -0.048)),
+            (Park::Sunset, -0.025, vec2(0.025, -0.096)),
+        ] {
+            let hit = Grade {
+                contact: Contact::Touch,
+                timing,
+                offset,
+            };
+            for (tap, expected) in [(false, Outcome::Double), (true, Outcome::Triple)] {
+                let mut flight = Flight::new(CENTER, hit, park);
+                let result = (0..1800).find_map(|step| {
+                    if tap && step % 30 == 0 && flight.can_boost_runner() {
+                        flight.runner.tap();
+                    }
+                    flight.advance(STEP)
+                });
+                assert_eq!(result, Some(expected), "{park:?} with tap={tap}");
+            }
+        }
     }
 
     #[test]
