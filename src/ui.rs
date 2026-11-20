@@ -172,12 +172,12 @@ fn fit(area: Rect, width: f32, height: f32) -> f32 {
 }
 
 fn menu_layout(area: Rect) -> (bool, Vec2, f32) {
-    let vertical = fit(area, 456.0, 642.0);
+    let vertical = fit(area, 456.0, 656.0);
     let wide = fit(area, 804.0, 346.0);
     if wide > vertical {
         (true, vec2(780.0, 322.0), wide)
     } else {
-        (false, vec2(432.0, 618.0), vertical)
+        (false, vec2(432.0, 632.0), vertical)
     }
 }
 
