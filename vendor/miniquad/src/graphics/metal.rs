@@ -10,10 +10,8 @@ use super::*;
 // https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf
 const MAX_UNIFORM_BUFFER_SIZE: u64 = 4 * 1024 * 1024;
 const NUM_INFLIGHT_FRAMES: usize = 3;
-#[cfg(any(target_os = "macos", all(target_os = "ios", target_arch = "x86_64")))]
+// An arm64 iOS Simulator also uses the Mac GPU's alignment requirements.
 const UNIFORM_BUFFER_ALIGN: u64 = 256;
-#[cfg(all(target_os = "ios", not(target_arch = "x86_64")))]
-const UNIFORM_BUFFER_ALIGN: u64 = 16;
 
 impl From<VertexFormat> for MTLVertexFormat {
     fn from(vf: VertexFormat) -> Self {
@@ -1122,9 +1120,7 @@ impl RenderingBackend for MetalContext {
 
         self.current_frame_index = (self.current_frame_index + 1) % NUM_INFLIGHT_FRAMES;
 
-        assert!(size < MAX_UNIFORM_BUFFER_SIZE as usize);
-
-        assert!(self.current_ub_offset < MAX_UNIFORM_BUFFER_SIZE);
+        assert!(size as u64 <= MAX_UNIFORM_BUFFER_SIZE - self.current_ub_offset);
 
         let buffer = self.uniform_buffers[self.current_frame_index];
         unsafe {
