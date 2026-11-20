@@ -52,7 +52,8 @@ build_macos() {
         printf '%s\n' 'macOS cross-build needs SDKROOT or a configured Cargo linker.' >&2
         return 1
     fi
-    CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER="${CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER:-$repo/scripts/macos-linker.sh}" \
+    MACOSX_DEPLOYMENT_TARGET=11.0 \
+        CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER="${CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER:-$repo/scripts/macos-linker.sh}" \
         cargo build --release --locked --target "$target"
     target_dir="$(cargo metadata --locked --format-version 1 --no-deps | read_metadata target_directory)"
     bundle="$repo/dist/macos/Batting.app"
@@ -67,6 +68,34 @@ build_macos() {
     printf '%s\n' "$bundle"
 }
 
+build_macos_dmg() (
+    if [[ "$(uname -s)" != Darwin ]]; then
+        printf '%s\n' 'macos-dmg requires macOS and hdiutil. Use macos to cross-build the app bundle.' >&2
+        return 1
+    fi
+    build_macos
+    local version stage mount image attached=false
+    version="$(cargo metadata --locked --format-version 1 --no-deps | read_metadata version)"
+    stage="$(mktemp -d)"
+    mount="$stage/mounted"
+    trap 'if $attached; then hdiutil detach "$mount" || exit 1; fi; rm -rf -- "$stage"' EXIT
+    mkdir "$stage/volume" "$mount"
+    ditto "$repo/dist/macos/Batting.app" "$stage/volume/Batting.app"
+    ln -s /Applications "$stage/volume/Applications"
+    image="batting-macos-arm64-v$version.dmg"
+    hdiutil create -srcfolder "$stage/volume" -volname 'Batting Club' -fs HFS+ -format UDZO "$stage/$image"
+    hdiutil verify "$stage/$image"
+    hdiutil attach -readonly -nobrowse -mountpoint "$mount" "$stage/$image"
+    attached=true
+    test "$(readlink "$mount/Applications")" = /Applications
+    lipo -verify_arch arm64 "$mount/Batting.app/Contents/MacOS/batting"
+    codesign --verify --strict "$mount/Batting.app"
+    hdiutil detach "$mount"
+    attached=false
+    mv -f "$stage/$image" "$repo/dist/macos/$image"
+    printf '%s\n' "$repo/dist/macos/$image"
+)
+
 read_metadata() {
     python3 -c '
 import json
@@ -76,6 +105,9 @@ data = json.load(sys.stdin)
 key = sys.argv[1]
 if key == "target_directory":
     print(data[key])
+elif key == "version":
+    project = next(package for package in data["packages"] if package["name"] == "batting")
+    print(project["version"])
 else:
     packages = {package["id"]: package for package in data["packages"]}
     project = next(node for node in data["resolve"]["nodes"] if node["id"] == data["resolve"]["root"])
@@ -87,7 +119,8 @@ else:
 }
 
 usage() {
-    printf 'Usage: %s [all|web|macos|pages]\n' "$0"
+    printf 'Usage: %s [all|web|macos|macos-dmg|pages]\n' "$0"
+    printf '%s\n' 'Windows: run scripts/build-windows.ps1 in PowerShell.'
     printf '%s\n' 'Default: build both Web and macOS.'
 }
 
@@ -100,6 +133,7 @@ case "${1:-all}" in
     web) build_web ;;
     pages) build_pages ;;
     macos) build_macos ;;
+    macos-dmg) build_macos_dmg ;;
     all) build_web; build_macos ;;
     -h|--help) usage ;;
     *) usage >&2; exit 2 ;;
