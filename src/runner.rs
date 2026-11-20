@@ -46,13 +46,16 @@ impl Runner {
     }
 
     pub fn next_leg_time(&self) -> f64 {
-        let seconds = ARRIVALS[self.target + 1] - ARRIVALS[self.target];
         // An active boost permits a close attempt if the player keeps tapping.
         if self.boost_remaining > 1e-9 {
-            seconds / (1.0 + BOOST_EXTRA_SPEED)
+            self.fastest_next_leg_time()
         } else {
-            seconds
+            ARRIVALS[self.target + 1] - ARRIVALS[self.target]
         }
+    }
+
+    pub fn fastest_next_leg_time(&self) -> f64 {
+        (ARRIVALS[self.target + 1] - ARRIVALS[self.target]) / (1.0 + BOOST_EXTRA_SPEED)
     }
 
     pub fn start_next_leg(&mut self) {
