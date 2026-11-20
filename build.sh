@@ -96,6 +96,39 @@ build_macos_dmg() (
     printf '%s\n' "$repo/dist/macos/$image"
 )
 
+build_ios() {
+    if [[ "$(uname -s)" != Darwin ]] || ! command -v xcodebuild >/dev/null; then
+        printf '%s\n' 'iOS builds require macOS with Xcode.' >&2
+        return 1
+    fi
+    local kind="$1" sdk destination output
+    local -a signing
+    if [[ "$kind" == sim ]]; then
+        sdk=iphonesimulator
+        destination='generic/platform=iOS Simulator'
+        signing=(CODE_SIGNING_ALLOWED=NO)
+    else
+        sdk=iphoneos
+        destination='generic/platform=iOS'
+        if [[ "${BATTING_IOS_UNSIGNED:-0}" == 1 ]]; then
+            signing=(CODE_SIGNING_ALLOWED=NO)
+        elif [[ -n "${BATTING_IOS_TEAM:-}" ]]; then
+            signing=(-allowProvisioningUpdates "DEVELOPMENT_TEAM=$BATTING_IOS_TEAM")
+        else
+            printf '%s\n' 'Set BATTING_IOS_TEAM and sign in to Xcode for the device build.' >&2
+            return 1
+        fi
+    fi
+    output="$repo/dist/ios/$kind"
+    mkdir -p "$output"
+    xcodebuild -project ios/Batting.xcodeproj -scheme Batting -configuration Release -sdk "$sdk" \
+        -destination "$destination" -derivedDataPath "$repo/target/xcode/$kind" \
+        "CONFIGURATION_BUILD_DIR=$output" \
+        "PRODUCT_BUNDLE_IDENTIFIER=${BATTING_IOS_BUNDLE_ID:-com.ken7python.batting.ios}" \
+        "${signing[@]}" build
+    printf '%s\n' "$output/Batting.app"
+}
+
 read_metadata() {
     python3 -c '
 import json
@@ -119,7 +152,7 @@ else:
 }
 
 usage() {
-    printf 'Usage: %s [all|web|macos|macos-dmg|pages]\n' "$0"
+    printf 'Usage: %s [all|web|macos|macos-dmg|ios-sim|ios-device|pages]\n' "$0"
     printf '%s\n' 'Windows: run scripts/build-windows.ps1 in PowerShell.'
     printf '%s\n' 'Default: build both Web and macOS.'
 }
@@ -134,6 +167,8 @@ case "${1:-all}" in
     pages) build_pages ;;
     macos) build_macos ;;
     macos-dmg) build_macos_dmg ;;
+    ios-sim) build_ios sim ;;
+    ios-device) build_ios device ;;
     all) build_web; build_macos ;;
     -h|--help) usage ;;
     *) usage >&2; exit 2 ;;
