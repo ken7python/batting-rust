@@ -24,10 +24,11 @@ pub fn batter_camera() -> Camera3D {
 }
 
 fn batter_fov(width: f32, height: f32) -> f32 {
-    let focal_height = (width * 1.75).clamp(400.0, 740.0);
+    let small_screen = ((640.0 - width.min(height)) / 220.0).clamp(0.0, 1.0);
+    let focal_height = (width * 1.75).clamp(400.0, 740.0) * (1.0 + 0.40 * small_screen);
     let half_fov = 23.5_f32.to_radians();
     (2.0 * (half_fov.tan() * height / focal_height).atan())
-        .clamp(23_f32.to_radians(), 60_f32.to_radians())
+        .clamp(15_f32.to_radians(), 68_f32.to_radians())
 }
 
 pub fn marker_scale(width: f32, height: f32) -> f32 {
@@ -613,31 +614,46 @@ pub fn reticle(camera: &Camera3D, aim: &Aim) {
     // Solid, pixel-aligned strips stay visible on high-DPI Metal displays.
     let left = a.x.min(b.x).floor();
     let top = a.y.min(b.y).floor();
-    let width = (b.x - a.x).abs().ceil();
+    let projected_width = (b.x - a.x).abs();
+    let width = projected_width.ceil();
     let height = (a.y - b.y).abs().ceil();
-    let scale = marker_scale(screen_width(), screen_height());
-    let thickness = 2.75 * scale;
+    let thickness = projected_width * 0.028;
     let color = Color::new(0.98, 0.98, 0.83, 0.85);
     draw_rectangle(left, top, width, thickness, color);
     draw_rectangle(left, top + height - thickness, width, thickness, color);
     draw_rectangle(left, top, thickness, height, color);
     draw_rectangle(left + width - thickness, top, thickness, height, color);
     let p = project(camera, on_plate(aim.point));
+    let radius = projected_width * 0.15;
     let tint = if aim.held {
         Color::from_rgba(181, 255, 102, 255)
     } else {
         AIM_GREEN
     };
     if aim.held {
-        draw_circle(p.x, p.y, 18.0 * scale, Color::new(0.55, 1.0, 0.28, 0.20));
+        draw_circle(p.x, p.y, radius * 1.2, Color::new(0.55, 1.0, 0.28, 0.20));
     }
-    draw_circle_lines(p.x, p.y, 15.0 * scale, 6.0 * scale, INK);
-    draw_circle_lines(p.x, p.y, 15.0 * scale, 4.0 * scale, tint);
-    draw_circle(p.x, p.y, 2.1 * scale, tint);
+    draw_circle_lines(p.x, p.y, radius, radius * 0.40, INK);
+    draw_circle_lines(p.x, p.y, radius, radius * 0.27, tint);
+    draw_circle(p.x, p.y, radius * 0.14, tint);
 }
 
 pub fn aim_movement(camera: &Camera3D, pixels: Vec2) -> Vec2 {
     let a = project(camera, on_plate(ZONE_MIN));
     let b = project(camera, on_plate(ZONE_MAX));
     pixels * (ZONE_MAX - ZONE_MIN) / (b - a)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn smaller_screens_get_a_longer_batting_camera_focal_length() {
+        let magnification = |width, height| height / (batter_fov(width, height) * 0.5).tan();
+        let desktop = magnification(1120.0, 720.0);
+        assert!(magnification(390.0, 844.0) > desktop * 1.25);
+        assert!(magnification(844.0, 390.0) > desktop * 1.35);
+        assert!(magnification(320.0, 568.0) > desktop);
+    }
 }
