@@ -24,41 +24,25 @@ pub fn batter_camera(display: DisplayProfile) -> Camera3D {
     batting_view(size.x, size.y, display)
 }
 
-fn batting_view(width: f32, height: f32, display: DisplayProfile) -> Camera3D {
+fn batting_view(width: f32, height: f32, _display: DisplayProfile) -> Camera3D {
     let mut camera = field_camera();
-    camera.fovy = batter_fov(width, height, display);
-    // Lower the eye line on short screens to keep the release and zone close vertically.
-    camera.position.y -= 0.50 * ((620.0 - height) / 210.0).clamp(0.0, 1.0);
-    let phone = if display.mobile() {
-        ((600.0 - width.min(height)) / 100.0).clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
-    if phone > 0.0 {
-        // A closer, lower eye line leaves room for the top of the zone and the pitcher's hand.
-        camera.position = camera.position.lerp(vec3(0.035, 1.14, 2.65), phone);
-        let zone_size = ZONE_MAX - ZONE_MIN;
-        // Find the largest zone that stays within both the width and height targets.
-        let zone_width = (width * 0.50).min(height * 0.55 * zone_size.x / zone_size.y);
-        let plate_distance = camera.position.distance(on_plate(CENTER));
-        let focal_length = plate_distance * zone_width / zone_size.x;
-        let closeup_fov = 2.0 * (height / (2.0 * focal_length)).atan();
-        camera.fovy += (closeup_fov - camera.fovy) * phone;
-    }
-    camera.target.y = batter_target_height(&camera, 0.16 - phone * 0.07);
+    let compact = ((768.0 - width.min(height)) / 268.0).clamp(0.0, 1.0);
+    camera.position = camera.position.lerp(vec3(0.035, 1.14, 2.65), compact);
+    // Use logical pixels (UIKit points on iOS), with the current iPad size as the cap.
+    let zone_width = strike_zone_width(width, height);
+    let plate_distance = camera.position.distance(on_plate(CENTER));
+    let focal_length = plate_distance * zone_width / (ZONE_MAX.x - ZONE_MIN.x);
+    camera.fovy = 2.0 * (height / (2.0 * focal_length)).atan();
+    camera.target.y = batter_target_height(&camera, 0.16 - compact * 0.07);
     camera
 }
 
-fn batter_fov(width: f32, height: f32, display: DisplayProfile) -> f32 {
-    let focal_height = if display.mobile() {
-        let small_screen = ((640.0 - width.min(height)) / 220.0).clamp(0.0, 1.0);
-        (width * 1.75).clamp(400.0, 740.0) * (1.0 + 0.46 * small_screen)
-    } else {
-        (width * 1.75).clamp(400.0, 680.0)
-    };
-    let half_fov = 23.5_f32.to_radians();
-    (2.0 * (half_fov.tan() * height / focal_height).atan())
-        .clamp(15_f32.to_radians(), 68_f32.to_radians())
+fn strike_zone_width(width: f32, height: f32) -> f32 {
+    const TABLET_WIDTH: f32 = 100.0;
+    let tablet = ((width.min(height) - 500.0) / 268.0).clamp(0.0, 1.0);
+    let size = TABLET_WIDTH * (2.0 + tablet) / 3.0;
+    let zone = ZONE_MAX - ZONE_MIN;
+    size.min(width * 0.50).min(height * 0.55 * zone.x / zone.y)
 }
 
 fn batter_target_height(camera: &Camera3D, center_offset: f32) -> f32 {
@@ -727,7 +711,7 @@ mod tests {
     }
 
     #[test]
-    fn phone_framing_shows_the_release_and_fits_the_zone_to_half_the_screen() {
+    fn zone_is_capped_at_tablet_size_and_smaller_on_phones() {
         for (width, height) in [
             (320.0, 568.0),
             (375.0, 667.0),
@@ -761,11 +745,14 @@ mod tests {
                 }
             }
             let span = (b - a).abs() * 0.5;
-            let limiting_axis = if width < height { span.x } else { span.y };
+            let drawn_width = span.x * width;
             assert!(
-                (0.49..=0.60).contains(&limiting_axis),
-                "{width}x{height}: {span:?}"
+                (64.0..=70.0).contains(&drawn_width),
+                "{width}x{height}: {drawn_width}"
             );
+            let desktop = batting_view(width, height, DisplayProfile::Desktop);
+            assert_eq!(desktop.fovy, camera.fovy);
+            assert_eq!(desktop.position, camera.position);
         }
     }
 
@@ -814,12 +801,27 @@ mod tests {
     }
 
     #[test]
-    fn smaller_screens_get_a_longer_batting_camera_focal_length() {
-        let magnification =
-            |width, height, display| height / (batter_fov(width, height, display) * 0.5).tan();
-        for (width, height) in [(390.0, 844.0), (844.0, 390.0), (320.0, 568.0)] {
-            let desktop = magnification(width, height, DisplayProfile::Desktop);
-            assert!(magnification(width, height, DisplayProfile::Mobile) > desktop * 1.25);
+    fn tablet_and_desktop_zone_widths_never_exceed_the_tablet_cap() {
+        for (width, height) in [
+            (768.0, 1024.0),
+            (1024.0, 768.0),
+            (1120.0, 720.0),
+            (2560.0, 1440.0),
+        ] {
+            let camera = batting_view(width, height, DisplayProfile::Mobile);
+            let matrix = Mat4::perspective_rh_gl(camera.fovy, width / height, 0.01, camera.z_far)
+                * Mat4::look_at_rh(camera.position, camera.target, camera.up);
+            let a = matrix * on_plate(ZONE_MIN).extend(1.0);
+            let b = matrix * on_plate(ZONE_MAX).extend(1.0);
+            let drawn_width = (b.x / b.w - a.x / a.w).abs() * width * 0.5;
+            assert!(
+                (90.0..=101.0).contains(&drawn_width),
+                "{width}x{height}: {drawn_width}"
+            );
+            assert_eq!(
+                camera.fovy,
+                batting_view(width, height, DisplayProfile::Desktop).fovy
+            );
         }
     }
 }
