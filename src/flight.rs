@@ -8,7 +8,8 @@ use crate::runner::{Runner, SLIDE_SECONDS};
 pub const STEP: f64 = 1.0 / 120.0;
 // Speed up ball travel without increasing its range or speeding up runners.
 const BALL_TEMPO: f32 = 1.35;
-const CLOSE_ADVANCE_MARGIN: f64 = 0.16;
+const SAFE_ADVANCE_MARGIN: f64 = 0.015;
+const CLOSE_ADVANCE_MARGIN: f64 = 0.22;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Outcome {
@@ -197,7 +198,7 @@ impl Flight {
         {
             let ball_time = self.time_to_defend_next_base();
             let runner_time = self.runner.next_leg_time();
-            if ball_time >= runner_time + 0.05 {
+            if ball_time >= runner_time + SAFE_ADVANCE_MARGIN {
                 self.runner.start_next_leg();
             } else if self.try_close_advance && ball_time >= runner_time - CLOSE_ADVANCE_MARGIN {
                 // Commit once on a marginal play. The real throw and taps decide the race.
@@ -779,7 +780,7 @@ mod tests {
     }
 
     #[test]
-    fn a_rare_close_attempt_can_be_lost_or_saved_by_tapping() {
+    fn a_close_attempt_can_be_lost_or_saved_by_tapping() {
         for (chance, tapping, expected) in [
             (false, false, Outcome::Fair),
             (true, false, Outcome::BaseOut(Fielder::Second)),
@@ -801,7 +802,7 @@ mod tests {
                 crate::defense::SECOND_BASE - Vec2::Y * 110.0;
             let mut returning =
                 FieldReturn::new(Fielder::Center, vec3(0.0, 1.1, -148.8), &flight.defense, 2);
-            returning.advance(&mut flight.defense, returning.remaining() - 3.04);
+            returning.advance(&mut flight.defense, returning.remaining() - 2.91);
             flight.returning = Some(returning);
             assert!(flight.advance(STEP).is_none());
             assert_eq!(flight.runner.target(), if chance { 2 } else { 1 });
