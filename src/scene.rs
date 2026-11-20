@@ -669,7 +669,9 @@ pub fn reticle(camera: &Camera3D, aim: &Aim) {
     draw_rectangle(left, top, thickness, height, color);
     draw_rectangle(left + width - thickness, top, thickness, height, color);
     let p = project(camera, on_plate(aim.point));
-    let radius = projected_width * 0.13;
+    // Macroquad draws the stroke outside its input radius.
+    let radius = projected_width * 0.14;
+    let stroke = radius * 0.24;
     let tint = if aim.held {
         Color::from_rgba(181, 255, 102, 255)
     } else {
@@ -678,8 +680,8 @@ pub fn reticle(camera: &Camera3D, aim: &Aim) {
     if aim.held {
         draw_circle(p.x, p.y, radius * 1.2, Color::new(0.55, 1.0, 0.28, 0.20));
     }
-    draw_circle_lines(p.x, p.y, radius, radius * 0.40, INK);
-    draw_circle_lines(p.x, p.y, radius, radius * 0.27, tint);
+    draw_circle_lines(p.x, p.y, radius - stroke * 1.35, stroke * 1.7, INK);
+    draw_circle_lines(p.x, p.y, radius - stroke, stroke, tint);
     draw_circle(p.x, p.y, radius * 0.14, tint);
 }
 
