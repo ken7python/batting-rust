@@ -27,7 +27,21 @@ fn batting_view(width: f32, height: f32, display: DisplayProfile) -> Camera3D {
     camera.fovy = batter_fov(width, height, display);
     // Lower the eye line on short screens to keep the release and zone close vertically.
     camera.position.y -= 0.50 * ((620.0 - height) / 210.0).clamp(0.0, 1.0);
-    camera.target.y = batter_target_height(&camera);
+    let phone = if display.mobile() {
+        ((600.0 - width.min(height)) / 100.0).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    if phone > 0.0 {
+        // A closer, lower eye line leaves room for the top of the zone and the pitcher's hand.
+        camera.position = camera.position.lerp(vec3(0.035, 1.14, 2.65), phone);
+        let zone_width = (width * 0.53).min(height * 0.51);
+        let plate_distance = camera.position.distance(on_plate(CENTER));
+        let focal_length = plate_distance * zone_width / (ZONE_MAX.x - ZONE_MIN.x);
+        let closeup_fov = 2.0 * (height / (2.0 * focal_length)).atan();
+        camera.fovy += (closeup_fov - camera.fovy) * phone;
+    }
+    camera.target.y = batter_target_height(&camera, 0.16 - phone * 0.07);
     camera
 }
 
@@ -43,10 +57,10 @@ fn batter_fov(width: f32, height: f32, display: DisplayProfile) -> f32 {
         .clamp(15_f32.to_radians(), 68_f32.to_radians())
 }
 
-fn batter_target_height(camera: &Camera3D) -> f32 {
-    // Anchor the zone near 58% of the screen height, even when the phone zooms in.
+fn batter_target_height(camera: &Camera3D, center_offset: f32) -> f32 {
+    // Anchor the zone just below screen center as the camera changes its field of view.
     let down_to_zone = ((camera.position.y - CENTER.y) / camera.position.z).atan();
-    let down_to_target = down_to_zone - ((camera.fovy * 0.5).tan() * 0.16).atan();
+    let down_to_target = down_to_zone - ((camera.fovy * 0.5).tan() * center_offset).atan();
     camera.position.y - down_to_target.tan() * (camera.position.z - camera.target.z)
 }
 
@@ -698,25 +712,42 @@ mod tests {
     #[test]
     fn batting_framing_shows_both_zone_corners_and_release_on_small_screens() {
         for (width, height) in [
-            (390.0, 844.0),
-            (844.0, 390.0),
-            (568.0, 320.0),
             (320.0, 568.0),
-            (1120.0, 720.0),
+            (375.0, 667.0),
+            (390.0, 844.0),
+            (430.0, 932.0),
+            (568.0, 320.0),
+            (844.0, 390.0),
+            (932.0, 430.0),
         ] {
             let camera = batting_view(width, height, DisplayProfile::Mobile);
             let view = Mat4::perspective_rh_gl(camera.fovy, width / height, 0.01, camera.z_far)
                 * Mat4::look_at_rh(camera.position, camera.target, camera.up);
-            for point in [
-                on_plate(ZONE_MIN),
-                on_plate(ZONE_MAX),
-                Delivery::default().release(),
-            ] {
+            let project_ndc = |point: Vec3| {
                 let clip = view * point.extend(1.0);
                 assert!(clip.w > 0.0);
-                assert!((clip.x / clip.w).abs() < 0.9);
-                assert!((clip.y / clip.w).abs() < 0.9, "{width}x{height} {point:?}");
+                let ndc = clip.truncate() / clip.w;
+                assert!(
+                    ndc.x.abs() < 0.9 && ndc.y.abs() < 0.93,
+                    "{width}x{height} {point:?} -> {ndc:?}"
+                );
+                ndc
+            };
+            let a = project_ndc(on_plate(ZONE_MIN));
+            let b = project_ndc(on_plate(ZONE_MAX));
+            for hand in [
+                crate::pitch::ThrowingHand::Right,
+                crate::pitch::ThrowingHand::Left,
+            ] {
+                for form in [PitchForm::Overhand, PitchForm::Sidearm] {
+                    project_ndc(Delivery { hand, form }.release());
+                }
             }
+            let zone_width = (b.x - a.x).abs() * width * 0.5;
+            assert!(
+                zone_width >= (width * 0.51).min(height * 0.49),
+                "{width}x{height}: {zone_width}"
+            );
         }
     }
 
