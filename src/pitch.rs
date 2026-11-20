@@ -169,8 +169,8 @@ impl PitchKind {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Repertoire {
     Fastballs,
-    Basic,
     #[default]
+    Basic,
     Varied,
 }
 
