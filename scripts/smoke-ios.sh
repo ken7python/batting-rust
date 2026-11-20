@@ -4,7 +4,7 @@ set -euo pipefail
 app=dist/ios/sim/Batting.app
 bundle_id=com.ken7python.batting.ios
 for family in iPhone iPad; do
-    udid="$(xcrun simctl list devices booted available --json | jq -r --arg family "$family" '[.devices[][] | select(.name | startswith($family))][0].udid // empty')"
+    udid="$(xcrun simctl list devices available --json | jq -r --arg family "$family" '[.devices[][] | select(.state == "Booted" and (.name | startswith($family)))][0].udid // empty')"
     if [[ -z "$udid" ]]; then
         udid="$(xcrun simctl list devices available --json | jq -r --arg family "$family" '[.devices[][] | select(.name | startswith($family))][0].udid // empty')"
         test -n "$udid"
