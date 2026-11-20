@@ -200,8 +200,11 @@ impl Flight {
             let runner_time = self.runner.next_leg_time();
             if ball_time >= runner_time + SAFE_ADVANCE_MARGIN {
                 self.runner.start_next_leg();
-            } else if self.try_close_advance && ball_time >= runner_time - CLOSE_ADVANCE_MARGIN {
-                // Commit once on a marginal play. The real throw and taps decide the race.
+            } else if self.try_close_advance
+                && ball_time >= runner_time - CLOSE_ADVANCE_MARGIN
+                && ball_time >= self.runner.fastest_next_leg_time() + STEP
+            {
+                // Commit once on a marginal play that steady tapping can still win.
                 self.try_close_advance = false;
                 self.runner.start_next_leg();
             }
@@ -781,10 +784,11 @@ mod tests {
 
     #[test]
     fn a_close_attempt_can_be_lost_or_saved_by_tapping() {
-        for (chance, tapping, expected) in [
-            (false, false, Outcome::Fair),
-            (true, false, Outcome::BaseOut(Fielder::Second)),
-            (true, true, Outcome::Double),
+        for (chance, tapping, ball_time, target, expected) in [
+            (false, false, 2.91, 1, Outcome::Fair),
+            (true, false, 2.91, 2, Outcome::BaseOut(Fielder::Second)),
+            (true, true, 2.91, 2, Outcome::Double),
+            (true, true, 2.70, 1, Outcome::Fair),
         ] {
             let mut flight = Flight::new(
                 CENTER,
@@ -802,10 +806,14 @@ mod tests {
                 crate::defense::SECOND_BASE - Vec2::Y * 110.0;
             let mut returning =
                 FieldReturn::new(Fielder::Center, vec3(0.0, 1.1, -148.8), &flight.defense, 2);
-            returning.advance(&mut flight.defense, returning.remaining() - 2.91);
+            returning.advance(&mut flight.defense, returning.remaining() - ball_time);
             flight.returning = Some(returning);
+            if ball_time < 2.8 {
+                // Even with acceleration already active, this throw is too fast.
+                flight.runner.tap();
+            }
             assert!(flight.advance(STEP).is_none());
-            assert_eq!(flight.runner.target(), if chance { 2 } else { 1 });
+            assert_eq!(flight.runner.target(), target);
             let outcome = (0..600).find_map(|step| {
                 if tapping && step % 28 == 0 && flight.can_boost_runner() {
                     flight.runner.tap();
