@@ -163,7 +163,7 @@ fn safe_viewport(_input: &mut FrameInput) -> Rect {
     #[cfg(target_os = "ios")]
     {
         let mut insets = [0.0; 4];
-        // The launcher writes four UIKit point values and consumes the pause notification.
+        // The launcher writes four framebuffer insets and consumes the pause notification.
         let flags = unsafe { batting_ios_metrics(insets.as_mut_ptr()) };
         if flags & 2 != 0 || (flags & 1 == 0 && !_input.away) {
             _input.window_minimized_event();
@@ -171,7 +171,7 @@ fn safe_viewport(_input: &mut FrameInput) -> Rect {
         if flags & 1 != 0 && _input.away {
             _input.window_restored_event();
         }
-        let [left, top, right, bottom] = insets;
+        let [left, top, right, bottom] = insets.map(|inset| inset / screen_dpi_scale());
         Rect::new(
             left,
             top,

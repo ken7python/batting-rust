@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" targetRuntime="iOS.CocoaTouch" useAutolayout="YES" launchScreen="YES" initialViewController="controller">
+    <dependencies><deployment identifier="iOS"/><plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin"/></dependencies>
+    <scenes>
+        <scene sceneID="launch">
+            <objects>
+                <viewController id="controller" sceneMemberID="viewController">
+                    <view key="view" contentMode="scaleToFill" id="background">
+                        <rect key="frame" x="0" y="0" width="844" height="390"/>
+                        <color key="backgroundColor" red="0.067" green="0.173" blue="0.180" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                    </view>
+                </viewController>
+                <placeholder placeholderIdentifier="IBFirstResponder" id="responder" sceneMemberID="firstResponder"/>
+            </objects>
+        </scene>
+    </scenes>
+</document>
