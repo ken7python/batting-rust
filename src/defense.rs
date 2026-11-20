@@ -9,7 +9,7 @@ pub const THIRD_BASE: Vec2 = vec2(-19.4, -19.4);
 const INFIELDER_SPEED: f32 = 5.6;
 const OUTFIELDER_SPEED: f32 = 6.25;
 const INFIELDER_THROW_SPEED: f32 = 27.0;
-const OUTFIELDER_THROW_SPEED: f32 = 34.0;
+const OUTFIELDER_THROW_SPEED: f32 = 30.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fielder {

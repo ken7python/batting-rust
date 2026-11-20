@@ -185,6 +185,14 @@ impl Flight {
         } else if !self.home_run {
             self.runner.advance(STEP);
         }
+        let took_second = self.runner.target() == 1
+            && !self.runner.moving()
+            && self.returning.is_some_and(|throw| {
+                !throw.fielder.infield() || throw.pickup.z < crate::defense::SECOND_BASE.y
+            });
+        if took_second {
+            self.runner.start_next_leg();
+        }
         let result = if self.returning.is_some() {
             self.step_throw(dt)
         } else {
@@ -527,7 +535,7 @@ mod tests {
         };
         for (park, expected) in [
             (Park::Sunset, Outcome::Homer),
-            (Park::Central, Outcome::HardFair),
+            (Park::Central, Outcome::BaseOut(Fielder::Shortstop)),
         ] {
             let mut flight = Flight::new(CENTER, grade, park);
             flight.confident = false; // This fixture replaces the initially predicted homer.
@@ -570,6 +578,7 @@ mod tests {
                             | Outcome::Triple
                             | Outcome::FlyOut(_)
                             | Outcome::GroundOut(_)
+                            | Outcome::BaseOut(_)
                     ));
                     assert!(end.xz().length() <= park.fence().0 + 1e-4);
                 }
@@ -578,7 +587,7 @@ mod tests {
     }
 
     #[test]
-    fn a_fly_to_the_center_fielder_is_caught_but_a_gap_shot_is_a_hit() {
+    fn a_fly_is_caught_but_a_gap_shot_sends_the_runner_to_second() {
         for (position, velocity, expected) in [
             (
                 vec3(3.8, 7.5, -53.0),
@@ -588,7 +597,7 @@ mod tests {
             (
                 vec3(16.0, 2.8, -38.0),
                 vec3(0.0, -5.0, -20.0),
-                Outcome::Fair,
+                Outcome::BaseOut(Fielder::Second),
             ),
         ] {
             let mut flight = Flight::new(
@@ -605,7 +614,8 @@ mod tests {
             flight.elapsed = 1.0;
             let outcome = (0..1000).find_map(|_| flight.advance(STEP));
             assert_eq!(outcome, Some(expected));
-            if expected == Outcome::Fair {
+            if matches!(expected, Outcome::BaseOut(_)) {
+                assert_eq!(flight.runner.target(), 2);
                 let contact = flight
                     .ground_contact
                     .expect("a hit should record its first landing");
@@ -802,10 +812,14 @@ mod tests {
             flight.try_close_advance = chance;
             flight.runner.advance(3.95 - STEP);
             flight.defense.positions[Fielder::Second as usize] = crate::defense::SECOND_BASE;
-            flight.defense.positions[Fielder::Center as usize] =
+            flight.defense.positions[Fielder::Shortstop as usize] =
                 crate::defense::SECOND_BASE - Vec2::Y * 110.0;
-            let mut returning =
-                FieldReturn::new(Fielder::Center, vec3(0.0, 1.1, -148.8), &flight.defense, 2);
+            let mut returning = FieldReturn::new(
+                Fielder::Shortstop,
+                vec3(0.0, 1.1, -30.0),
+                &flight.defense,
+                2,
+            );
             returning.advance(&mut flight.defense, returning.remaining() - ball_time);
             flight.returning = Some(returning);
             if ball_time < 2.8 {
