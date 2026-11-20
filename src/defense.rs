@@ -57,6 +57,7 @@ impl Fielder {
 pub struct Defense {
     pub positions: [Vec2; 7],
     pub chasing: Option<Fielder>,
+    pub diving: Option<Fielder>,
 }
 
 impl Defense {
@@ -73,6 +74,7 @@ impl Defense {
                 vec2(31.0, -49.0) * outfield_scale,
             ],
             chasing: None,
+            diving: None,
         }
     }
 
@@ -144,6 +146,17 @@ impl Defense {
             })
             .min_by(|(_, a), (_, b)| a.total_cmp(b))
             .map(|(fielder, _)| fielder)
+    }
+
+    pub fn dive_for(&mut self, ball: Vec3) -> Option<Fielder> {
+        let fielder = self.chasing?;
+        let distance = self.position(fielder).distance(ball.xz());
+        if (0.32..=1.05).contains(&ball.y) && (0.85..=2.15).contains(&distance) {
+            self.diving = Some(fielder);
+            Some(fielder)
+        } else {
+            None
+        }
     }
 
     fn second_base_cover(&self) -> Fielder {

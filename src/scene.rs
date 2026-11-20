@@ -309,6 +309,7 @@ pub fn fielders(
     time: f32,
     returning: Option<&FieldReturn>,
     catch: Option<(Fielder, Vec3)>,
+    result_age: f32,
 ) {
     let jersey = Color::from_rgba(52, 113, 201, 255);
     let skin = Color::from_rgba(216, 165, 118, 255);
@@ -316,6 +317,10 @@ pub fn fielders(
         let catching = catch
             .filter(|(fielder, _)| *fielder == role)
             .map(|(_, ball)| ball);
+        if let Some(ball) = catching.filter(|_| defense.diving == Some(role)) {
+            diving_fielder(point, ball, result_age, jersey, skin);
+            continue;
+        }
         let lift = catching.map_or(0.0, |ball| (ball.y - 1.79).clamp(0.0, 0.56));
         let feet = vec3(point.x, lift, point.y);
         let chasing = defense.chasing == Some(role);
@@ -387,6 +392,54 @@ pub fn fielders(
             },
         );
     }
+}
+
+fn diving_fielder(point: Vec2, ball: Vec3, age: f32, jersey: Color, skin: Color) {
+    let forward = (ball.xz() - point).normalize_or_zero();
+    let forward = vec3(forward.x, 0.0, forward.y);
+    let side = Vec3::Y.cross(forward);
+    let settle = (age / 0.32).clamp(0.0, 1.0);
+    let hips =
+        vec3(point.x, 0.24 + 0.15 * (1.0 - settle), point.y) + forward * (0.18 + 0.36 * settle);
+    let shoulders = hips + forward * 0.56 + Vec3::Y * 0.09;
+    draw_sphere(
+        shoulders + forward * 0.19 + Vec3::Y * 0.07,
+        0.15,
+        None,
+        skin,
+    );
+    draw_cube(
+        shoulders + forward * 0.21 + Vec3::Y * 0.16,
+        vec3(0.28, 0.09, 0.28),
+        None,
+        jersey,
+    );
+    for segment in 0..=6 {
+        let t = segment as f32 / 6.0;
+        draw_cube(
+            hips.lerp(shoulders, t),
+            vec3(0.43, 0.24, 0.43),
+            None,
+            jersey,
+        );
+        for lateral in [-0.14, 0.14] {
+            let foot = hips - forward * 0.78 + side * lateral - Vec3::Y * 0.12;
+            draw_cube(
+                (hips + side * lateral).lerp(foot, t),
+                vec3(0.17, 0.18, 0.17),
+                None,
+                WHITE,
+            );
+        }
+        let arm = (shoulders + side * 0.14).lerp(ball, t);
+        draw_cube(
+            arm,
+            Vec3::splat(0.16),
+            None,
+            if segment < 3 { jersey } else { skin },
+        );
+    }
+    draw_cube(ball, vec3(0.28, 0.22, 0.26), None, BROWN);
 }
 
 pub fn pitcher(time: f64, delivery: Delivery) {
