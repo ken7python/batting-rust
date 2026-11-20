@@ -4,6 +4,7 @@ use macroquad::prelude::{Vec2, screen_height, screen_width, vec2};
 pub enum DisplayProfile {
     Desktop,
     Mobile,
+    MobileWeb,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -46,11 +47,17 @@ impl DisplayProfile {
         let mobile = unsafe { batting_uses_mobile_layout() != 0 };
         #[cfg(not(target_arch = "wasm32"))]
         let mobile = cfg!(any(target_os = "ios", target_os = "android"));
-        if mobile { Self::Mobile } else { Self::Desktop }
+        if !mobile {
+            Self::Desktop
+        } else if cfg!(target_arch = "wasm32") {
+            Self::MobileWeb
+        } else {
+            Self::Mobile
+        }
     }
 
     pub fn mobile(self) -> bool {
-        self == Self::Mobile
+        self != Self::Desktop
     }
 
     pub fn ui_scale(self, fit: f32) -> f32 {
