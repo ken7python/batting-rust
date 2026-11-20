@@ -9,6 +9,7 @@ mod runner;
 mod scene;
 mod session;
 mod sound;
+mod stands;
 mod ui;
 
 use defense::Defense;
@@ -23,6 +24,7 @@ use play::{Phase, Play, ResultCard};
 use scene::*;
 use session::{Mode, Record, Session};
 use sound::Sounds;
+use stands::Stands;
 use ui::{Action, PreviewTiming, Settings, Ui};
 
 const NATIVE_TOUCH: bool = cfg!(any(target_os = "ios", target_os = "android"));
@@ -195,6 +197,7 @@ async fn game() {
     let font = load_ttf_font_from_bytes(include_bytes!("../assets/BattingSans.ttf"))
         .expect("bundled UI font must be a valid TTF");
     let mut sounds = Sounds::load().await;
+    let stands = Stands::new();
     let mut audio_started = false;
     let mut screen = Screen::Menu;
     let mut settings = Settings::default();
@@ -330,15 +333,15 @@ async fn game() {
 
         let action = match &screen {
             Screen::Menu => {
-                draw_idle(&camera, settings.delivery, settings.park);
+                draw_idle(&camera, settings.delivery, settings.park, &stands);
                 ui.menu(&settings)
             }
             Screen::Game(run) => {
-                draw_play(&run.play, &camera, settings.preview, display);
+                draw_play(&run.play, &camera, settings.preview, display, &stands);
                 ui.game(run)
             }
             Screen::Summary(record) => {
-                draw_idle(&camera, settings.delivery, settings.park);
+                draw_idle(&camera, settings.delivery, settings.park, &stands);
                 ui.summary(record)
             }
         };
@@ -397,15 +400,21 @@ async fn game() {
     }
 }
 
-fn draw_idle(camera: &Camera3D, delivery: Delivery, park: Park) {
+fn draw_idle(camera: &Camera3D, delivery: Delivery, park: Park, stands: &Stands) {
     set_camera(camera);
-    field(park);
+    field(park, stands);
     fielders(&Defense::new(park), 0.0, None, None, 0.0);
     pitcher(-batting::WINDUP, delivery);
     set_default_camera();
 }
 
-fn draw_play(play: &Play, camera: &Camera3D, preview: PreviewTiming, display: DisplayProfile) {
+fn draw_play(
+    play: &Play,
+    camera: &Camera3D,
+    preview: PreviewTiming,
+    display: DisplayProfile,
+    stands: &Stands,
+) {
     let mut ball_marker = None;
     match &play.phase {
         Phase::Flight(flight) => {
@@ -420,7 +429,7 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: PreviewTiming, display: Di
                 |returning| return_camera(returning, &flight.runner),
             );
             set_camera(&follow);
-            field(play.park);
+            field(play.park, stands);
             let catch = flight
                 .defense
                 .chasing
@@ -497,7 +506,7 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: PreviewTiming, display: Di
                 |returning| return_camera(returning, &view.runner),
             );
             set_camera(&follow);
-            field(play.park);
+            field(play.park, stands);
             let catch = match *outcome {
                 Outcome::FlyOut(fielder) => Some((fielder, view.ball)),
                 _ => None,
@@ -522,7 +531,7 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: PreviewTiming, display: Di
         }
         _ => {
             set_camera(camera);
-            field(play.park);
+            field(play.park, stands);
             fielders(&Defense::new(play.park), 0.0, None, None, 0.0);
             pitcher(play.time, play.pitch.delivery);
             bat(play.time, &play.aim);
