@@ -88,7 +88,7 @@ build_macos_dmg() (
     hdiutil attach -readonly -nobrowse -mountpoint "$mount" "$stage/$image"
     attached=true
     test "$(readlink "$mount/Applications")" = /Applications
-    lipo -verify_arch arm64 "$mount/Batting.app/Contents/MacOS/batting"
+    test "$(lipo -archs "$mount/Batting.app/Contents/MacOS/batting")" = arm64
     codesign --verify --strict "$mount/Batting.app"
     hdiutil detach "$mount"
     attached=false
