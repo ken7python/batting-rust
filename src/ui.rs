@@ -170,13 +170,25 @@ pub struct Ui<'a> {
     draws: Vec<Draw>,
 }
 
+fn fit(area: Rect, width: f32, height: f32) -> f32 {
+    (area.w / width).min(area.h / height).min(1.85)
+}
+
+fn menu_layout(area: Rect) -> (bool, Vec2, f32) {
+    let vertical = fit(area, 456.0, 642.0);
+    let wide = fit(area, 804.0, 346.0);
+    if wide > vertical {
+        (true, vec2(780.0, 322.0), wide)
+    } else {
+        (false, vec2(432.0, 618.0), vertical)
+    }
+}
+
 impl<'a> Ui<'a> {
     pub fn new(font: &'a Font, area: Rect, press: Option<Vec2>, touch: bool) -> Self {
         Self {
             font,
-            scale: (area.w / if touch { 820.0 } else { 980.0 })
-                .min(area.h / 680.0)
-                .clamp(if touch { 0.55 } else { 0.40 }, 1.7),
+            scale: fit(area, 440.0, 385.0),
             area,
             touch,
             mouse: press.unwrap_or_else(|| {
@@ -261,148 +273,137 @@ impl<'a> Ui<'a> {
         if !primary {
             self.draws.push(Draw::Border(rect, LINE));
         }
-        let base_size = 20.0;
-        let available_width = rect.w - 28.0 * self.scale;
-        let measured_width = measure_text(
-            title,
-            Some(self.font),
-            (base_size * self.scale).round() as u16,
-            1.0,
-        )
-        .width;
-        let text_size = if measured_width > available_width {
-            base_size * available_width / measured_width / self.scale
-        } else {
-            base_size
-        };
-        self.text(
-            title,
-            rect.x + 14.0 * self.scale,
-            rect.y + rect.h * 0.63,
-            text_size,
-            if primary { INK } else { CREAM },
-        );
+        let padding = 8.0 * self.scale;
+        let available = rect.w - padding * 2.0;
+        let mut pixels = (20.0 * self.scale).round().max(1.0) as u16;
+        let mut width = measure_text(title, Some(self.font), pixels, 1.0).width;
+        while width > available && pixels > 1 {
+            pixels -= 1;
+            width = measure_text(title, Some(self.font), pixels, 1.0).width;
+        }
+        self.draws.push(Draw::Text {
+            label: title.into(),
+            position: vec2(
+                rect.center().x - width * 0.5,
+                rect.center().y + f32::from(pixels) * 0.35,
+            ),
+            size: pixels,
+            color: if primary { INK } else { CREAM },
+        });
         hovered && self.pressed
     }
 
     pub fn menu(&mut self, settings: &Settings) -> Option<Action> {
-        let s = self.scale;
-        let audio_x = self.area.right() - 160.0 * s;
-        let music = self.button(
-            Rect::new(audio_x, self.area.y + 20.0 * s, 140.0 * s, 42.0 * s),
-            if settings.music {
-                "BGM オン"
-            } else {
-                "BGM オフ"
-            },
-            false,
+        let (wide, size, s) = menu_layout(self.area);
+        self.scale = s;
+        let origin = self.area.center() - size * s * 0.5;
+        let rect = |x, y, w, h| Rect::new(origin.x + x * s, origin.y + y * s, w * s, h * s);
+        self.panel(rect(0.0, 0.0, size.x, size.y));
+        self.fill(origin.x, origin.y, size.x * s, 4.0 * s, AMBER);
+        self.text(
+            "BATTING CLUB",
+            origin.x + 20.0 * s,
+            origin.y + 56.0 * s,
+            43.0,
+            CREAM,
         );
-        let effects = self.button(
-            Rect::new(audio_x, self.area.y + 72.0 * s, 140.0 * s, 42.0 * s),
-            if settings.effects {
-                "効果音 オン"
-            } else {
-                "効果音 オフ"
-            },
-            false,
-        );
-        let x = self.area.x + 28.0 * s;
-        let y = self.area.center().y - 657.0 * s * 0.5;
-        let w = 436.0 * s;
-        let rect = |x0, y0, width, height| Rect::new(x + x0 * s, y + y0 * s, width * s, height * s);
-        self.panel(Rect::new(x, y, w, 657.0 * s));
-        self.fill(x, y, w, 4.0 * s, AMBER);
-        self.text("3D BASEBALL", x + 24.0 * s, y + 43.0 * s, 16.0, AMBER);
-        self.text("BATTING CLUB", x + 22.0 * s, y + 97.0 * s, 47.0, CREAM);
         self.text(
             "ドラッグで狙い、離して打つ。",
-            x + 24.0 * s,
-            y + 135.0 * s,
-            21.0,
+            origin.x + 20.0 * s,
+            origin.y + 92.0 * s,
+            20.0,
             MUTED,
         );
-        let challenge = self.button(rect(24.0, 163.0, 388.0, 51.0), "10球チャレンジ", true);
-        let practice = self.button(rect(24.0, 229.0, 388.0, 51.0), "練習を始める", false);
-        self.text("球速", x + 24.0 * s, y + 313.0 * s, 18.0, MUTED);
-        let mut speed_choice = None;
+
+        let main_width = if wide { 318.0 } else { 392.0 };
+        let challenge = self.button(rect(20.0, 112.0, main_width, 54.0), "10球チャレンジ", true);
+        let practice = self.button(rect(20.0, 176.0, main_width, 54.0), "練習を始める", false);
+        self.text(
+            "球速",
+            origin.x + 20.0 * s,
+            origin.y + 256.0 * s,
+            18.0,
+            MUTED,
+        );
+        let mut action = if challenge {
+            Some(Action::Challenge)
+        } else {
+            practice.then_some(Action::Practice)
+        };
+        let speed_width = (main_width - 18.0) / 4.0;
         for (index, speed) in PitchSpeed::ALL.into_iter().enumerate() {
-            let bounds = rect(24.0 + index as f32 * 99.0, 324.0, 91.0, 44.0);
+            let bounds = rect(
+                20.0 + index as f32 * (speed_width + 6.0),
+                266.0,
+                speed_width,
+                46.0,
+            );
             if self.button(bounds, speed.label(), speed == settings.speed) {
-                speed_choice = Some(Action::Speed(speed));
+                action = Some(Action::Speed(speed));
             }
         }
-        let pitch_label = settings
+
+        let pitch = settings
             .selected_pitch()
             .map_or("ランダム", PitchKind::label);
-        let pitch = self.button(
-            rect(24.0, 383.0, 220.0, 44.0),
-            &format!("球種  {pitch_label}"),
-            false,
-        );
-        let preview = self.button(
-            rect(252.0, 383.0, 160.0, 44.0),
-            &format!("予測  {}", settings.preview.label()),
-            false,
-        );
-        let sensitivity_label = ["低い", "標準", "高い"][settings.sensitivity];
-        let sensitivity = self.button(
-            rect(24.0, 443.0, 188.0, 44.0),
-            &format!("感度  {sensitivity_label}"),
-            false,
-        );
-        let hand = self.button(
-            rect(224.0, 443.0, 188.0, 44.0),
-            settings.delivery.hand.label(),
-            false,
-        );
-        let form = self.button(
-            rect(24.0, 500.0, 188.0, 44.0),
-            settings.delivery.form.label(),
-            false,
-        );
-        let park = self.button(
-            rect(224.0, 500.0, 188.0, 44.0),
-            &format!("{} {:.0}m", settings.park.label(), settings.park.fence().0),
-            false,
-        );
-        let repertoire = self.button(
-            rect(24.0, 554.0, 188.0, 44.0),
-            &format!("配球  {}", settings.pitch_mix.repertoire.label()),
-            false,
-        );
-        let break_size = self.button(
-            rect(224.0, 554.0, 188.0, 44.0),
-            &format!("変化量  {}", settings.pitch_mix.break_size.label()),
-            false,
-        );
-        self.text(
-            if self.touch {
-                "操作  ドラッグで照準を動かす"
-            } else {
-                "操作  左ボタンを押したままマウスを動かす"
-            },
-            x + 24.0 * s,
-            y + 635.0 * s,
-            16.0,
-            MUTED,
-        );
-        [
-            (challenge, Action::Challenge),
-            (practice, Action::Practice),
-            (pitch, Action::Pitch),
-            (preview, Action::Preview),
-            (sensitivity, Action::Sensitivity),
-            (hand, Action::Hand),
-            (form, Action::Form),
-            (park, Action::Park),
-            (repertoire, Action::Repertoire),
-            (break_size, Action::BreakSize),
-            (music, Action::Music),
-            (effects, Action::Effects),
-        ]
-        .into_iter()
-        .find_map(|(hit, action)| hit.then_some(action))
-        .or(speed_choice)
+        let sensitivity = ["低い", "標準", "高い"][settings.sensitivity];
+        let options = [
+            (format!("球種  {pitch}"), Action::Pitch),
+            (
+                format!("予測  {}", settings.preview.label()),
+                Action::Preview,
+            ),
+            (format!("感度  {sensitivity}"), Action::Sensitivity),
+            (settings.delivery.hand.label().into(), Action::Hand),
+            (settings.delivery.form.label().into(), Action::Form),
+            (
+                format!("{} {:.0}m", settings.park.label(), settings.park.fence().0),
+                Action::Park,
+            ),
+            (
+                format!("配球  {}", settings.pitch_mix.repertoire.label()),
+                Action::Repertoire,
+            ),
+            (
+                format!("変化量  {}", settings.pitch_mix.break_size.label()),
+                Action::BreakSize,
+            ),
+            (
+                if settings.music {
+                    "BGM オン"
+                } else {
+                    "BGM オフ"
+                }
+                .into(),
+                Action::Music,
+            ),
+            (
+                if settings.effects {
+                    "効果音 オン"
+                } else {
+                    "効果音 オフ"
+                }
+                .into(),
+                Action::Effects,
+            ),
+        ];
+        let (x, y, width) = if wide {
+            (358.0, 20.0, 196.0)
+        } else {
+            (20.0, 328.0, 192.0)
+        };
+        for (index, (label, choice)) in options.into_iter().enumerate() {
+            let bounds = rect(
+                x + (index % 2) as f32 * (width + 8.0),
+                y + (index / 2) as f32 * 56.0,
+                width,
+                48.0,
+            );
+            if self.button(bounds, &label, false) {
+                action = Some(choice);
+            }
+        }
+        action
     }
 
     pub fn pause_rect(&self) -> Rect {
@@ -411,7 +412,7 @@ impl<'a> Ui<'a> {
             self.area.right() - 140.0 * s,
             self.area.y + 20.0 * s,
             120.0 * s,
-            42.0 * s,
+            52.0 * s,
         )
     }
 
@@ -480,7 +481,7 @@ impl<'a> Ui<'a> {
             if let Some(view) = &card.fielding
                 && view.returning.is_some()
             {
-                self.runner_diamond(&view.runner, false);
+                self.runner_diamond(&view.runner, false, true);
             }
         } else if let Phase::Flight(flight) = &session.play.phase {
             let h = self.area.bottom();
@@ -522,7 +523,11 @@ impl<'a> Ui<'a> {
             );
             self.text(&detail, x + 13.0 * s, h - 30.0 * s, 26.0, CREAM);
             if flight.home_run.is_none() {
-                self.runner_diamond(&flight.runner, !session.paused && flight.can_boost_runner());
+                self.runner_diamond(
+                    &flight.runner,
+                    !session.paused && flight.can_boost_runner(),
+                    false,
+                );
             }
             if flight
                 .ground_contact
@@ -604,7 +609,12 @@ impl<'a> Ui<'a> {
     fn field_call(&mut self, label: &str, color: Color) {
         let s = self.scale;
         let center = self.area.center().x;
-        let top = self.area.y;
+        let top = self.area.y
+            + if self.area.w < 590.0 * s {
+                86.0 * s
+            } else {
+                0.0
+            };
         let width = 145.0 * s;
         let x = center - width * 0.5;
         self.panel(Rect::new(x, top + 23.0 * s, width, 46.0 * s));
@@ -681,11 +691,17 @@ impl<'a> Ui<'a> {
         self.centered_text(detail, center, y + 80.0 * s, 17.0, CREAM);
     }
 
-    fn runner_diamond(&mut self, runner: &Runner, can_boost: bool) {
-        let s = self.scale;
-        let size_boost = if self.touch { 1.18 } else { 1.0 };
-        let s = s * size_boost;
-        let home = vec2(self.area.right() - 67.0 * s, self.area.bottom() - 94.0 * s);
+    fn runner_diamond(&mut self, runner: &Runner, can_boost: bool, result: bool) {
+        let clearance = if result && self.area.w < 700.0 * self.scale {
+            128.0 * self.scale
+        } else {
+            0.0
+        };
+        let s = self.scale * 1.45;
+        let home = vec2(
+            self.area.right() - 60.0 * s,
+            self.area.bottom() - 41.0 * s - clearance,
+        );
         let corner = 27.0 * s;
         let bases = [
             home,
@@ -735,7 +751,7 @@ impl<'a> Ui<'a> {
             if can_boost && runner.boosted() {
                 7.0
             } else {
-                5.0
+                6.0
             } * s,
             AMBER,
         ));
@@ -795,62 +811,68 @@ impl<'a> Ui<'a> {
         }
     }
 
-    fn history_table(&mut self, record: &Record, x: f32, y: f32, show_points: bool) {
+    fn history_table(&mut self, record: &Record, origin: Vec2, width: f32, show_points: bool) {
         let s = self.scale;
-        let width = 676.0 * s;
-        self.fill(x, y, width, 31.0 * s, Color::from_rgba(25, 62, 62, 255));
-        for (offset, label) in [
-            (12.0, "打席"),
-            (73.0, "球種"),
-            (221.0, "球速"),
-            (337.0, "結果"),
-            (505.0, "飛距離"),
-            (606.0, "得点"),
+        let left = |fraction| origin.x + width * fraction;
+        self.fill(
+            origin.x,
+            origin.y,
+            width,
+            25.0 * s,
+            Color::from_rgba(25, 62, 62, 255),
+        );
+        for (fraction, label) in [
+            (0.02, "打席"),
+            (0.12, "球種"),
+            (0.35, "球速"),
+            (0.50, "結果"),
+            (0.74, "飛距離"),
+            (0.89, "得点"),
         ] {
             if show_points || label != "得点" {
-                self.text(label, x + offset * s, y + 21.0 * s, 15.0, MUTED);
+                self.text(label, left(fraction), origin.y + 18.0 * s, 15.0, MUTED);
             }
         }
         if record.completed == 0 {
             self.centered_text(
                 "まだ結果はありません",
-                x + width * 0.5,
-                y + 102.0 * s,
+                left(0.5),
+                origin.y + 96.0 * s,
                 20.0,
                 MUTED,
             );
         }
         for (row, (number, entry)) in record.history().enumerate() {
-            let top = y + (34.0 + row as f32 * 33.0) * s;
+            let top = origin.y + (27.0 + row as f32 * 26.0) * s;
             let background = if row % 2 == 0 {
                 Color::from_rgba(29, 59, 58, 255)
             } else {
                 INK
             };
-            self.fill(x, top, width, 30.0 * s, background);
-            let baseline = top + 21.0 * s;
-            self.text(&format!("{number:02}"), x + 12.0 * s, baseline, 16.0, MUTED);
-            self.text(entry.pitch.label(), x + 73.0 * s, baseline, 17.0, CREAM);
+            self.fill(origin.x, top, width, 24.0 * s, background);
+            let baseline = top + 17.0 * s;
+            self.text(&format!("{number:02}"), left(0.02), baseline, 16.0, MUTED);
+            self.text(entry.pitch.label(), left(0.12), baseline, 16.0, CREAM);
             self.text(
                 &format!("{:.0} km/h", entry.speed),
-                x + 221.0 * s,
+                left(0.35),
                 baseline,
-                16.0,
+                15.0,
                 CREAM,
             );
             let color = hit_accent(entry.outcome).unwrap_or(CREAM);
             if entry.outcome.is_hit() {
-                self.fill(x, top, 3.0 * s, 30.0 * s, color);
+                self.fill(origin.x, top, 3.0 * s, 24.0 * s, color);
             }
-            self.text(entry.outcome.label(), x + 337.0 * s, baseline, 17.0, color);
+            self.text(entry.outcome.label(), left(0.50), baseline, 16.0, color);
             let distance = entry
                 .distance
                 .map_or_else(|| "-".into(), |distance| format!("{distance:.0} m"));
-            self.text(&distance, x + 505.0 * s, baseline, 16.0, MUTED);
+            self.text(&distance, left(0.74), baseline, 15.0, MUTED);
             if show_points {
                 self.text(
                     &entry.outcome.points().to_string(),
-                    x + 606.0 * s,
+                    left(0.89),
                     baseline,
                     16.0,
                     color,
@@ -859,60 +881,71 @@ impl<'a> Ui<'a> {
         }
     }
 
+    fn history_panel(&mut self, height: f32) -> Rect {
+        let width = if self.area.w / self.area.h < 1.15 {
+            452.0
+        } else {
+            598.0
+        };
+        self.scale = fit(self.area, width + 16.0, height + 16.0);
+        let size = vec2(width, height) * self.scale;
+        let point = self.area.center() - size * 0.5;
+        let panel = Rect::new(point.x, point.y, size.x, size.y);
+        self.panel(panel);
+        self.fill(panel.x, panel.y, panel.w, 4.0 * self.scale, AMBER);
+        panel
+    }
+
     fn paused_history(&mut self, record: &Record, show_points: bool) -> Option<Action> {
+        let panel = self.history_panel(407.0);
         let s = self.scale;
-        let x = self.area.center().x - 360.0 * s;
-        let y = self.area.center().y - 256.0 * s;
-        self.panel(Rect::new(x, y, 720.0 * s, 512.0 * s));
-        self.fill(x, y, 720.0 * s, 4.0 * s, AMBER);
-        self.text("打席一覧", x + 22.0 * s, y + 43.0 * s, 28.0, CREAM);
-        self.history_table(record, x + 22.0 * s, y + 64.0 * s, show_points);
-        self.button(
-            Rect::new(x + 22.0 * s, y + 449.0 * s, 676.0 * s, 42.0 * s),
-            "戻る",
-            true,
-        )
-        .then_some(Action::History)
+        let x = panel.x + 14.0 * s;
+        let y = panel.y;
+        let width = panel.w - 28.0 * s;
+        self.text("打席一覧", x, y + 36.0 * s, 25.0, CREAM);
+        self.history_table(record, vec2(x, y + 48.0 * s), width, show_points);
+        self.button(Rect::new(x, y + 345.0 * s, width, 48.0 * s), "戻る", true)
+            .then_some(Action::History)
     }
 
     pub fn summary(&mut self, record: &Record) -> Option<Action> {
+        let panel = self.history_panel(442.0);
         let s = self.scale;
-        let x = self.area.center().x - 360.0 * s;
-        let y = self.area.center().y - 282.0 * s;
-        self.panel(Rect::new(x, y, 720.0 * s, 564.0 * s));
-        self.fill(x, y, 720.0 * s, 4.0 * s, AMBER);
-        self.text(
-            "10球チャレンジ結果",
-            x + 22.0 * s,
-            y + 48.0 * s,
-            29.0,
-            CREAM,
-        );
+        let x = panel.x + 14.0 * s;
+        let y = panel.y;
+        let width = panel.w - 28.0 * s;
+        self.text("10球チャレンジ結果", x, y + 39.0 * s, 25.0, CREAM);
         self.centered_text(
             &format!("{} 点", record.points),
-            x + 595.0 * s,
-            y + 55.0 * s,
-            40.0,
+            x + width * 0.85,
+            y + 40.0 * s,
+            30.0,
             AMBER,
         );
         self.text(
             &format!(
-                "安打  {}    二塁打  {}    三塁打  {}    本塁打  {}",
+                "安打  {}   二塁打  {}   三塁打  {}   本塁打  {}",
                 record.fair, record.doubles, record.triples, record.home_runs
             ),
-            x + 22.0 * s,
-            y + 83.0 * s,
-            18.0,
+            x,
+            y + 66.0 * s,
+            17.0,
             MUTED,
         );
-        self.history_table(record, x + 22.0 * s, y + 103.0 * s, true);
+        self.history_table(record, vec2(x, y + 82.0 * s), width, true);
+        let button_width = (width - 8.0 * s) * 0.5;
         let replay = self.button(
-            Rect::new(x + 22.0 * s, y + 500.0 * s, 329.0 * s, 44.0 * s),
+            Rect::new(x, y + 380.0 * s, button_width, 48.0 * s),
             "もう一度",
             true,
         );
         let menu = self.button(
-            Rect::new(x + 369.0 * s, y + 500.0 * s, 329.0 * s, 44.0 * s),
+            Rect::new(
+                x + button_width + 8.0 * s,
+                y + 380.0 * s,
+                button_width,
+                48.0 * s,
+            ),
             "タイトルへ",
             false,
         );
@@ -947,4 +980,29 @@ fn feedback_label(grade: Grade) -> String {
         "照準が左"
     };
     format!("タイミング {timing}  /  {position}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn menus_fit_small_phones_in_both_orientations_with_usable_targets() {
+        for (width, height) in [
+            (320.0, 568.0),
+            (390.0, 844.0),
+            (568.0, 320.0),
+            (844.0, 390.0),
+            (1024.0, 768.0),
+            (1120.0, 720.0),
+        ] {
+            let area = Rect::new(0.0, 0.0, width, height);
+            let (wide, size, scale) = menu_layout(area);
+            assert!(size.x * scale < width && size.y * scale < height);
+            assert!(46.0 * scale >= 32.0);
+            if (width - height).abs() > 240.0 && width > height {
+                assert!(wide);
+            }
+        }
+    }
 }

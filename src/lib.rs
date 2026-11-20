@@ -515,7 +515,7 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: PreviewTiming) {
     }
     set_default_camera();
     if let Some(point) = throw_marker {
-        let scale = (screen_height() / 720.0).clamp(0.90, 2.0);
+        let scale = marker_scale(screen_width(), screen_height());
         draw_circle(point.x, point.y, 3.0 * scale, WHITE);
         draw_circle_lines(point.x, point.y, 6.0 * scale, 1.4 * scale, SKYBLUE);
     }
@@ -529,7 +529,7 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: PreviewTiming) {
             if show_preview {
                 let predicted = play.pitch.preview_point(play.time);
                 let p = project(camera, predicted);
-                let radius = (screen_height() / 720.0).clamp(0.90, 2.0) * 6.0;
+                let radius = marker_scale(screen_width(), screen_height()) * 6.0;
                 let color = if predicted.z < 0.0 { GOLD } else { SKYBLUE };
                 draw_circle(p.x, p.y, radius + 1.5, BLACK);
                 draw_circle(p.x, p.y, radius, color);
