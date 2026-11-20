@@ -136,6 +136,7 @@ pub struct FieldReturn {
     pub receiver: Fielder,
     pub pickup: Vec3,
     pub target: Vec2,
+    pub base: usize,
     release: Vec3,
     transfer: f32,
     travel: f32,
@@ -143,20 +144,23 @@ pub struct FieldReturn {
 }
 
 impl FieldReturn {
-    pub fn new(fielder: Fielder, pickup: Vec3, defense: &Defense) -> Self {
-        let (receiver, target) = if fielder.infield() {
-            (Fielder::First, FIRST_BASE)
-        } else {
-            let covering = [Fielder::Shortstop, Fielder::Second]
-                .into_iter()
-                .min_by(|&a, &b| {
-                    defense
-                        .position(a)
-                        .distance_squared(SECOND_BASE)
-                        .total_cmp(&defense.position(b).distance_squared(SECOND_BASE))
-                })
-                .expect("there are two infielders to cover second");
-            (covering, SECOND_BASE)
+    pub fn new(fielder: Fielder, pickup: Vec3, defense: &Defense, base: usize) -> Self {
+        let (receiver, target) = match base {
+            1 => (Fielder::First, FIRST_BASE),
+            2 => {
+                let covering = [Fielder::Shortstop, Fielder::Second]
+                    .into_iter()
+                    .min_by(|&a, &b| {
+                        defense
+                            .position(a)
+                            .distance_squared(SECOND_BASE)
+                            .total_cmp(&defense.position(b).distance_squared(SECOND_BASE))
+                    })
+                    .expect("there are two infielders to cover second");
+                (covering, SECOND_BASE)
+            }
+            3 => (Fielder::Third, THIRD_BASE),
+            _ => unreachable!("there are three playable bases"),
         };
         let start = defense.position(fielder);
         let toward = (target - start).normalize_or_zero();
@@ -178,6 +182,7 @@ impl FieldReturn {
             receiver,
             pickup,
             target,
+            base,
             release,
             transfer,
             travel,
@@ -200,15 +205,19 @@ impl FieldReturn {
         self.elapsed >= self.transfer + self.travel
     }
 
+    pub fn remaining(&self) -> f32 {
+        (self.transfer + self.travel - self.elapsed).max(0.0)
+    }
+
     pub fn carrying(&self) -> bool {
         self.fielder == self.receiver
     }
 
     pub fn target_label(&self) -> &'static str {
-        if self.fielder.infield() {
-            "一塁"
-        } else {
-            "二塁"
+        match self.base {
+            1 => "一塁",
+            2 => "二塁",
+            _ => "三塁",
         }
     }
 
