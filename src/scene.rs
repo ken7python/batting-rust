@@ -38,7 +38,7 @@ fn batting_view(width: f32, height: f32, _display: DisplayProfile) -> Camera3D {
 }
 
 fn strike_zone_width(width: f32, height: f32) -> f32 {
-    const TABLET_WIDTH: f32 = 100.0;
+    const TABLET_WIDTH: f32 = 200.0;
     let tablet = ((width.min(height) - 500.0) / 268.0).clamp(0.0, 1.0);
     let size = TABLET_WIDTH * (2.0 + tablet) / 3.0;
     let zone = ZONE_MAX - ZONE_MIN;
@@ -747,7 +747,7 @@ mod tests {
             let span = (b - a).abs() * 0.5;
             let drawn_width = span.x * width;
             assert!(
-                (64.0..=70.0).contains(&drawn_width),
+                (115.0..=138.0).contains(&drawn_width),
                 "{width}x{height}: {drawn_width}"
             );
             let desktop = batting_view(width, height, DisplayProfile::Desktop);
@@ -815,7 +815,7 @@ mod tests {
             let b = matrix * on_plate(ZONE_MAX).extend(1.0);
             let drawn_width = (b.x / b.w - a.x / a.w).abs() * width * 0.5;
             assert!(
-                (90.0..=101.0).contains(&drawn_width),
+                (180.0..=202.0).contains(&drawn_width),
                 "{width}x{height}: {drawn_width}"
             );
             assert_eq!(
