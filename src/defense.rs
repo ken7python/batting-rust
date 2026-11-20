@@ -6,10 +6,10 @@ pub const FIRST_BASE: Vec2 = vec2(19.4, -19.4);
 pub const SECOND_BASE: Vec2 = vec2(0.0, -38.8);
 pub const THIRD_BASE: Vec2 = vec2(-19.4, -19.4);
 
-pub const FIELDING_REACH: f32 = 0.94;
-
-const INFIELDER_SPEED: f32 = 5.3;
-const THROW_SPEED: f32 = 26.0;
+const INFIELDER_SPEED: f32 = 5.6;
+const OUTFIELDER_SPEED: f32 = 6.25;
+const INFIELDER_THROW_SPEED: f32 = 27.0;
+const OUTFIELDER_THROW_SPEED: f32 = 34.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fielder {
@@ -76,8 +76,16 @@ impl Defense {
         }
     }
 
-    pub fn chase(&mut self, position: Vec3, velocity: Vec3, elapsed: f32, dt: f32, rolling: bool) {
-        if elapsed < 0.34 {
+    pub fn chase(
+        &mut self,
+        position: Vec3,
+        velocity: Vec3,
+        elapsed: f32,
+        dt: f32,
+        rolling: bool,
+        runner_target: usize,
+    ) {
+        if elapsed < 0.27 {
             return;
         }
         let lead = if rolling {
@@ -91,14 +99,23 @@ impl Defense {
         let target = position.xz() + velocity.xz() * lead;
         let index = self.closest(target);
         let fielder = Fielder::ALL[index];
+        if !fielder.infield() && elapsed < 0.34 {
+            return;
+        }
         let speed = if fielder.infield() {
             INFIELDER_SPEED
         } else {
-            6.0
+            OUTFIELDER_SPEED
         };
         self.move_toward(fielder, target, speed * dt);
         if rolling && fielder != Fielder::First {
             self.move_toward(Fielder::First, FIRST_BASE, INFIELDER_SPEED * dt);
+        }
+        if rolling && !fielder.infield() {
+            self.move_toward(self.second_base_cover(), SECOND_BASE, INFIELDER_SPEED * dt);
+            if runner_target >= 2 {
+                self.move_toward(Fielder::Third, THIRD_BASE, INFIELDER_SPEED * dt);
+            }
         }
         self.chasing = Some(fielder);
     }
@@ -113,10 +130,32 @@ impl Defense {
         *position += toward.clamp_length_max(distance);
     }
 
-    pub fn within_reach(&self, position: Vec2, radius: f32) -> Option<Fielder> {
-        let index = self.closest(position);
-        (self.positions[index].distance_squared(position) <= radius * radius)
-            .then_some(Fielder::ALL[index])
+    pub fn within_reach(&self, position: Vec2, airborne: bool) -> Option<Fielder> {
+        Fielder::ALL
+            .into_iter()
+            .filter_map(|fielder| {
+                let reach: f32 = match (fielder.infield(), airborne) {
+                    (true, true) => 1.22,
+                    (true, false) => 1.10,
+                    (false, _) => 0.94,
+                };
+                let distance = self.position(fielder).distance_squared(position);
+                (distance <= reach * reach).then_some((fielder, distance))
+            })
+            .min_by(|(_, a), (_, b)| a.total_cmp(b))
+            .map(|(fielder, _)| fielder)
+    }
+
+    fn second_base_cover(&self) -> Fielder {
+        if self.position(Fielder::Second).distance_squared(SECOND_BASE)
+            < self
+                .position(Fielder::Shortstop)
+                .distance_squared(SECOND_BASE)
+        {
+            Fielder::Second
+        } else {
+            Fielder::Shortstop
+        }
     }
 
     fn closest(&self, target: Vec2) -> usize {
@@ -147,18 +186,7 @@ impl FieldReturn {
     pub fn new(fielder: Fielder, pickup: Vec3, defense: &Defense, base: usize) -> Self {
         let (receiver, target) = match base {
             1 => (Fielder::First, FIRST_BASE),
-            2 => {
-                let covering = [Fielder::Shortstop, Fielder::Second]
-                    .into_iter()
-                    .min_by(|&a, &b| {
-                        defense
-                            .position(a)
-                            .distance_squared(SECOND_BASE)
-                            .total_cmp(&defense.position(b).distance_squared(SECOND_BASE))
-                    })
-                    .expect("there are two infielders to cover second");
-                (covering, SECOND_BASE)
-            }
+            2 => (defense.second_base_cover(), SECOND_BASE),
             3 => (Fielder::Third, THIRD_BASE),
             _ => unreachable!("there are three playable bases"),
         };
@@ -166,16 +194,21 @@ impl FieldReturn {
         let toward = (target - start).normalize_or_zero();
         let release = on_field(start + toward * 0.30, 1.65);
         let carrying = fielder == receiver;
+        let (throw_speed, exchange) = if fielder.infield() {
+            (INFIELDER_THROW_SPEED, 0.38)
+        } else {
+            (OUTFIELDER_THROW_SPEED, 0.28)
+        };
         let travel = if carrying {
             start.distance(target) / INFIELDER_SPEED
         } else {
-            (release.xz().distance(target) / THROW_SPEED).max(0.12)
+            (release.xz().distance(target) / throw_speed).max(0.12)
         };
         let transfer = if carrying {
             0.18
         } else {
             let cover = defense.position(receiver).distance(target) / INFIELDER_SPEED;
-            (cover - travel).max(0.38)
+            (cover - travel).max(exchange)
         };
         Self {
             fielder,

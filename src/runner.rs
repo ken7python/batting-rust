@@ -3,7 +3,7 @@ use macroquad::prelude::*;
 use crate::defense::{FIRST_BASE, SECOND_BASE, THIRD_BASE};
 
 const BASES: [Vec2; 4] = [Vec2::ZERO, FIRST_BASE, SECOND_BASE, THIRD_BASE];
-const ARRIVALS: [f64; 4] = [0.0, 3.95, 6.70, 9.45];
+const ARRIVALS: [f64; 4] = [0.0, 3.95, 7.05, 10.30];
 const BOOST_DURATION: f64 = 0.30;
 const BOOST_EXTRA_SPEED: f64 = 0.12;
 
@@ -99,7 +99,7 @@ mod tests {
         runner.advance(5.0);
         assert_eq!(runner.position(), FIRST_BASE);
         runner.start_next_leg();
-        runner.advance(2.75);
+        runner.advance(3.10);
         assert_eq!(runner.reached(), 2);
         assert_eq!(runner.position(), SECOND_BASE);
         runner.start_next_leg();

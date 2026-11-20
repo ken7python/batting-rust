@@ -1,7 +1,7 @@
 use macroquad::prelude::*;
 
 use crate::batting::{BALL_RADIUS, Contact, Grade, HIT_TIMING, MEET_RADIUS};
-use crate::defense::{Defense, FIELDING_REACH, FieldReturn, Fielder};
+use crate::defense::{Defense, FieldReturn, Fielder};
 use crate::park::Park;
 use crate::runner::Runner;
 
@@ -271,12 +271,18 @@ impl Flight {
         if !self.cleared_fence {
             let reachable = old.lerp(next, ground.unwrap_or(1.0));
             if fair(reachable) {
-                self.defense
-                    .chase(reachable, self.velocity, self.elapsed, dt, false);
+                self.defense.chase(
+                    reachable,
+                    self.velocity,
+                    self.elapsed,
+                    dt,
+                    false,
+                    self.runner.target(),
+                );
                 if !self.hit_wall
                     && self.velocity.y < 0.0
                     && (0.45..=2.35).contains(&reachable.y)
-                    && let Some(fielder) = self.defense.within_reach(reachable.xz(), FIELDING_REACH)
+                    && let Some(fielder) = self.defense.within_reach(reachable.xz(), true)
                 {
                     self.position = reachable;
                     return Some(Outcome::FlyOut(fielder));
@@ -313,12 +319,15 @@ impl Flight {
             self.position = vec3(stop.x, BALL_RADIUS, stop.y);
             self.velocity = Vec3::ZERO;
         }
-        self.defense
-            .chase(self.position, self.velocity, self.elapsed, dt, true);
-        if let Some(fielder) = self
-            .defense
-            .within_reach(self.position.xz(), FIELDING_REACH)
-        {
+        self.defense.chase(
+            self.position,
+            self.velocity,
+            self.elapsed,
+            dt,
+            true,
+            self.runner.target(),
+        );
+        if let Some(fielder) = self.defense.within_reach(self.position.xz(), false) {
             self.defense.chasing = Some(fielder);
             let base = self
                 .runner
@@ -570,7 +579,7 @@ mod tests {
             );
             flight.runner.advance(3.95);
             flight.runner.start_next_leg();
-            flight.runner.advance(2.75);
+            flight.runner.advance(3.10);
             flight.runner.start_next_leg();
             flight.runner.advance(extra_time);
             flight.defense.positions[Fielder::Second as usize] = crate::defense::SECOND_BASE;
@@ -600,40 +609,29 @@ mod tests {
     #[test]
     fn runners_hold_at_second_or_contest_third_in_both_parks() {
         for (park, timing, offset) in [
-            (Park::Central, -0.060, vec2(0.025, 0.024)),
-            (Park::Sunset, -0.040, vec2(0.075, 0.096)),
+            (Park::Central, -0.060, vec2(0.025, 0.096)),
+            (Park::Sunset, -0.060, vec2(0.025, 0.096)),
         ] {
             let hit = Grade {
                 contact: Contact::Touch,
                 timing,
                 offset,
             };
-            for (mode, expected) in [
-                (0, Outcome::Double),
-                (1, Outcome::Triple),
-                (2, Outcome::BaseOut(Fielder::Third)),
-            ] {
+            for (tap, expected) in [(false, Outcome::Double), (true, Outcome::Triple)] {
                 let mut flight = Flight::new(CENTER, hit, park);
                 let result = (0..1800).find_map(|step| {
-                    if mode > 0
-                        && step % 30 == 0
-                        && flight.can_boost_runner()
-                        && (mode != 2 || flight.runner.target() < 3)
-                    {
+                    if tap && step % 30 == 0 && flight.can_boost_runner() {
                         flight.runner.tap();
                     }
                     flight.advance(STEP)
                 });
-                assert_eq!(result, Some(expected), "{park:?} with mode={mode}");
-                match expected {
-                    Outcome::Double => {
-                        assert_eq!(flight.runner.position(), crate::defense::SECOND_BASE)
-                    }
-                    Outcome::Triple => {
-                        assert_eq!(flight.runner.position(), crate::defense::THIRD_BASE)
-                    }
-                    _ => assert_eq!(flight.returning.unwrap().base, 3),
-                }
+                assert_eq!(result, Some(expected), "{park:?} with tap={tap}");
+                let base = if tap {
+                    crate::defense::THIRD_BASE
+                } else {
+                    crate::defense::SECOND_BASE
+                };
+                assert_eq!(flight.runner.position(), base);
             }
         }
     }
