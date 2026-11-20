@@ -1,6 +1,7 @@
 use macroquad::prelude::*;
 
 use crate::batting::{BARREL_RADIUS, BARREL_TIMING, Grade};
+use crate::display::DisplayProfile;
 use crate::flight::Outcome;
 use crate::park::Park;
 use crate::pitch::{Delivery, PitchForm, PitchKind, PitchMix, PitchSpeed, ThrowingHand};
@@ -161,35 +162,35 @@ pub struct Ui<'a> {
     font: &'a Font,
     scale: f32,
     area: Rect,
-    touch: bool,
+    display: DisplayProfile,
     mouse: Vec2,
     pressed: bool,
     draws: Vec<Draw>,
 }
 
 fn fit(area: Rect, width: f32, height: f32) -> f32 {
-    (area.w / width).min(area.h / height).min(1.85)
+    (area.w / width).min(area.h / height)
 }
 
-fn menu_layout(area: Rect) -> (bool, Vec2, f32) {
+fn menu_layout(area: Rect, display: DisplayProfile) -> (bool, Vec2, f32) {
     let vertical = fit(area, 456.0, 656.0);
     let wide = fit(area, 804.0, 346.0);
     if wide > vertical {
-        (true, vec2(780.0, 322.0), wide)
+        (true, vec2(780.0, 322.0), display.ui_scale(wide))
     } else {
-        (false, vec2(432.0, 632.0), vertical)
+        (false, vec2(432.0, 632.0), display.ui_scale(vertical))
     }
 }
 
 impl<'a> Ui<'a> {
-    pub fn new(font: &'a Font, area: Rect, press: Option<Vec2>, touch: bool) -> Self {
+    pub fn new(font: &'a Font, area: Rect, press: Option<Vec2>, display: DisplayProfile) -> Self {
         Self {
             font,
-            scale: fit(area, 440.0, 385.0),
+            scale: display.ui_scale(fit(area, 440.0, 385.0)),
             area,
-            touch,
+            display,
             mouse: press.unwrap_or_else(|| {
-                if touch {
+                if display.mobile() {
                     Vec2::splat(-1.0)
                 } else {
                     Vec2::from(mouse_position())
@@ -291,7 +292,7 @@ impl<'a> Ui<'a> {
     }
 
     pub fn menu(&mut self, settings: &Settings) -> Option<Action> {
-        let (wide, size, s) = menu_layout(self.area);
+        let (wide, size, s) = menu_layout(self.area, self.display);
         self.scale = s;
         let origin = self.area.center() - size * s * 0.5;
         let rect = |x, y, w, h| Rect::new(origin.x + x * s, origin.y + y * s, w * s, h * s);
@@ -544,7 +545,7 @@ impl<'a> Ui<'a> {
                 "スイング済み"
             } else if session.play.aim.held {
                 "離してスイング"
-            } else if self.touch {
+            } else if self.display.mobile() {
                 "押したままドラッグ"
             } else {
                 "左ボタンを押してドラッグ"
@@ -686,7 +687,7 @@ impl<'a> Ui<'a> {
         } else {
             0.0
         };
-        let s = self.scale * 1.45;
+        let s = self.scale * if self.display.mobile() { 1.45 } else { 1.0 };
         let home = vec2(
             self.area.right() - 60.0 * s,
             self.area.bottom() - 41.0 * s - clearance,
@@ -876,7 +877,9 @@ impl<'a> Ui<'a> {
         } else {
             598.0
         };
-        self.scale = fit(self.area, width + 16.0, height + 16.0);
+        self.scale = self
+            .display
+            .ui_scale(fit(self.area, width + 16.0, height + 16.0));
         let size = vec2(width, height) * self.scale;
         let point = self.area.center() - size * 0.5;
         let panel = Rect::new(point.x, point.y, size.x, size.y);
@@ -988,6 +991,20 @@ mod tests {
     }
 
     #[test]
+    fn desktop_menus_and_hud_keep_a_smaller_scale_at_the_same_resolution() {
+        for (width, height) in [(1120.0, 720.0), (2560.0, 1440.0)] {
+            let area = Rect::new(0.0, 0.0, width, height);
+            let (_, _, desktop) = menu_layout(area, DisplayProfile::Desktop);
+            let (_, _, mobile) = menu_layout(area, DisplayProfile::Mobile);
+            assert_eq!(desktop, 1.0);
+            assert!(mobile > desktop);
+            let hud = fit(area, 440.0, 385.0);
+            assert_eq!(DisplayProfile::Desktop.ui_scale(hud), 1.0);
+            assert!(DisplayProfile::Mobile.ui_scale(hud) > desktop);
+        }
+    }
+
+    #[test]
     fn menus_fit_small_phones_in_both_orientations_with_usable_targets() {
         for (width, height) in [
             (320.0, 568.0),
@@ -998,7 +1015,7 @@ mod tests {
             (1120.0, 720.0),
         ] {
             let area = Rect::new(0.0, 0.0, width, height);
-            let (wide, size, scale) = menu_layout(area);
+            let (wide, size, scale) = menu_layout(area, DisplayProfile::Mobile);
             assert!(size.x * scale < width && size.y * scale < height);
             assert!(46.0 * scale >= 32.0);
             if (width - height).abs() > 240.0 && width > height {

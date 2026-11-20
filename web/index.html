@@ -33,6 +33,14 @@
           canvas.setPointerCapture(event.pointerId);
         }
       });
+      miniquad_add_plugin({
+        name: "batting_display",
+        version: 1,
+        register_plugin(imports) {
+          imports.env.batting_uses_mobile_layout = () =>
+            window.matchMedia("(pointer: coarse)").matches ? 1 : 0;
+        },
+      });
       load("./batting.wasm");
     })();
   </script>

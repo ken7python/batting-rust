@@ -1,5 +1,6 @@
 mod batting;
 mod defense;
+mod display;
 mod flight;
 mod park;
 mod pitch;
@@ -11,6 +12,7 @@ mod sound;
 mod ui;
 
 use defense::Defense;
+use display::DisplayProfile;
 use flight::Outcome;
 use macroquad::input::utils::{register_input_subscriber, repeat_all_miniquad_input};
 use macroquad::miniquad::{EventHandler, TouchPhase};
@@ -199,6 +201,7 @@ async fn game() {
     let subscriber = register_input_subscriber();
     let mut input = FrameInput::default();
     let mut previous_size = Vec2::ZERO;
+    let display = DisplayProfile::current();
     if NATIVE_TOUCH {
         simulate_mouse_with_touch(false);
     }
@@ -224,8 +227,8 @@ async fn game() {
         };
         audio_started |= pointer.is_some();
         let dt = f64::from(get_frame_time().min(0.1));
-        let camera = batter_camera();
-        let mut ui = Ui::new(&font, viewport, pointer, NATIVE_TOUCH);
+        let camera = batter_camera(display);
+        let mut ui = Ui::new(&font, viewport, pointer, display);
 
         if let Screen::Game(session) = &mut screen {
             if input.lost {
@@ -331,7 +334,7 @@ async fn game() {
                 ui.menu(&settings)
             }
             Screen::Game(run) => {
-                draw_play(&run.play, &camera, settings.preview);
+                draw_play(&run.play, &camera, settings.preview, display);
                 ui.game(run)
             }
             Screen::Summary(record) => {
@@ -402,16 +405,16 @@ fn draw_idle(camera: &Camera3D, delivery: Delivery, park: Park) {
     set_default_camera();
 }
 
-fn draw_play(play: &Play, camera: &Camera3D, preview: PreviewTiming) {
+fn draw_play(play: &Play, camera: &Camera3D, preview: PreviewTiming, display: DisplayProfile) {
     let mut ball_marker = None;
     match &play.phase {
         Phase::Flight(flight) => {
             let follow = flight.returning.as_ref().map_or_else(
                 || {
                     if flight.confident {
-                        home_run_camera(flight.position, flight.velocity, flight.elapsed)
+                        home_run_camera(flight.position, flight.velocity, flight.elapsed, display)
                     } else {
-                        flight_camera(flight.position, flight.velocity, flight.elapsed)
+                        flight_camera(flight.position, flight.velocity, flight.elapsed, display)
                     }
                 },
                 |returning| return_camera(returning, &flight.runner),
@@ -486,9 +489,9 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: PreviewTiming) {
             let follow = view.returning.as_ref().map_or_else(
                 || {
                     if *outcome == Outcome::Homer {
-                        home_run_camera(view.ball, view.velocity, view.elapsed)
+                        home_run_camera(view.ball, view.velocity, view.elapsed, display)
                     } else {
-                        flight_camera(view.ball, view.velocity, view.elapsed)
+                        flight_camera(view.ball, view.velocity, view.elapsed, display)
                     }
                 },
                 |returning| return_camera(returning, &view.runner),
@@ -530,7 +533,7 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: PreviewTiming) {
     }
     set_default_camera();
     if let Some((point, color)) = ball_marker {
-        let scale = marker_scale(screen_width(), screen_height());
+        let scale = marker_scale(screen_width(), screen_height(), display);
         draw_circle(
             point.x,
             point.y,
@@ -546,7 +549,7 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: PreviewTiming) {
             if preview.visible(play.time) {
                 let predicted = play.pitch.preview_point(play.time);
                 let p = project(camera, predicted);
-                let radius = marker_scale(screen_width(), screen_height()) * 6.0;
+                let radius = marker_scale(screen_width(), screen_height(), display) * 6.0;
                 let color = if predicted.z < 0.0 { GOLD } else { SKYBLUE };
                 draw_circle(p.x, p.y, radius + 1.5, BLACK);
                 draw_circle(p.x, p.y, radius, color);
