@@ -49,15 +49,51 @@ GitHub Pagesを更新するには `./build.sh pages` を実行し、生成され
 
 ## macOS版
 
-macOSでXcode Command Line ToolsとRustを用意し、以下を実行します。
+配布用DMGを開き、`Batting.app` を「アプリケーション」にドラッグします。配布対象はApple Siliconです。アプリはアドホック署名で、DMGは未公証です。
+
+macOSでXcode Command Line Tools、Rust、Python 3を用意してDMGを作成できます。
 
 ```sh
 rustup target add aarch64-apple-darwin
-./build.sh macos
-open dist/macos/Batting.app
+./build.sh macos-dmg
 ```
 
-生成するアプリはApple Silicon向けです。Linuxでクロスビルドする場合は、`SDKROOT` にmacOS SDKを指定し、Clangとlldを用意して同じスクリプトを実行します。
+DMGは `dist/macos/` に生成されます。`./build.sh macos` は開発用の `dist/macos/Batting.app` を生成します。Linuxでアプリをクロスビルドする場合は、`SDKROOT` にmacOS SDKを指定してClangとlldを使います。
+
+## Windows 10 / 11 (x64)
+
+Visual Studio Build ToolsのC++デスクトップ開発とWindows SDK、Rustを用意し、PowerShellで実行します。成果物は `dist/windows/` に出力されます。ZIPを展開して `Batting.exe` を起動できます。
+
+```powershell
+rustup target add x86_64-pc-windows-msvc
+.\scripts\build-windows.ps1
+```
+
+## iPhone・iPad
+
+Apple Silicon MacにXcodeとiOS Simulatorのランタイムを入れます。iOS・iPadOS 16以降を対象にします。
+
+```sh
+rustup target add aarch64-apple-ios-sim aarch64-apple-ios
+./build.sh ios-sim
+xcrun simctl install booted dist/ios/sim/Batting.app
+xcrun simctl launch booted com.ken7python.batting.ios
+```
+
+実機は `ios/Batting.xcodeproj` を開き、Signing & Capabilitiesで開発チームと必要に応じて固有のBundle IDを選びます。開発者モードが有効なiPhoneまたはiPadをXcodeで選び、Runします。コマンドラインでは開発チームを `BATTING_IOS_TEAM`、必要に応じてBundle IDを `BATTING_IOS_BUNDLE_ID` に指定して `./build.sh ios-device` を実行できます。署名済みアプリは `dist/ios/device/Batting.app` に出力されます。
+
+## Android
+
+macOSまたはx64 LinuxにJDK 17、Gradle 8.9、Android SDK、Python 3を用意し、`ANDROID_HOME` をSDKの場所に設定します。ARM64実機とx86_64エミュレータを対象にします。最低バージョンはAndroid 8.0です。
+
+```sh
+sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;30.0.16248370' 'platform-tools'
+rustup target add aarch64-linux-android x86_64-linux-android
+./build.sh android
+adb install -r dist/android/batting-debug.apk
+```
+
+APKは検証用のデバッグ署名を使います。別のデバッグ鍵で署名された同じパッケージ名のアプリが端末にある場合は、そのアプリをアンインストールしてから入れ直してください。
 
 ## 開発とテスト
 

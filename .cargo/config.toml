@@ -1,3 +1,7 @@
 [target.wasm32-unknown-unknown]
 # quad-snd declares WebAudio functions as externs supplied by mq_js_bundle.js.
 rustflags = ["-C", "link-arg=--import-undefined"]
+
+[target.x86_64-pc-windows-msvc]
+# Package a standalone executable without the separate MSVC runtime DLL.
+rustflags = ["-C", "target-feature=+crt-static"]
