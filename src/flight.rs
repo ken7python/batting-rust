@@ -183,7 +183,7 @@ impl Flight {
             }
         }
         if self.confident {
-            self.runner.advance(STEP * 0.38);
+            self.runner.advance(STEP * 0.30);
         } else if !self.home_run {
             self.runner.advance(STEP);
         }
@@ -556,7 +556,7 @@ mod tests {
         };
         for (park, expected) in [
             (Park::Sunset, Outcome::Homer),
-            (Park::Central, Outcome::BaseOut(Fielder::Shortstop)),
+            (Park::Central, Outcome::Double),
         ] {
             let mut flight = Flight::new(CENTER, grade, park);
             flight.confident = false; // This fixture replaces the initially predicted homer.
@@ -608,7 +608,7 @@ mod tests {
     }
 
     #[test]
-    fn a_fly_is_caught_but_a_gap_shot_sends_the_runner_to_second() {
+    fn a_fly_is_caught_but_a_gap_shot_beats_the_throw_to_second_without_taps() {
         for (position, velocity, expected) in [
             (
                 vec3(3.8, 7.5, -53.0),
@@ -618,7 +618,7 @@ mod tests {
             (
                 vec3(16.0, 2.8, -38.0),
                 vec3(0.0, -5.0, -20.0),
-                Outcome::BaseOut(Fielder::Second),
+                Outcome::Double,
             ),
         ] {
             let mut flight = Flight::new(
@@ -633,10 +633,12 @@ mod tests {
             flight.position = position;
             flight.velocity = velocity;
             flight.elapsed = 1.0;
+            flight.runner.advance(f64::from(flight.elapsed));
             let outcome = (0..1000).find_map(|_| flight.advance(STEP));
             assert_eq!(outcome, Some(expected));
-            if matches!(expected, Outcome::BaseOut(_)) {
+            if expected == Outcome::Double {
                 assert_eq!(flight.runner.target(), 2);
+                assert_eq!(flight.runner.position(), crate::defense::SECOND_BASE);
                 let contact = flight
                     .ground_contact
                     .expect("a hit should record its first landing");
@@ -744,10 +746,10 @@ mod tests {
                 },
                 Park::Central,
             );
-            flight.runner.advance(3.95);
-            flight.runner.start_next_leg();
-            flight.runner.advance(3.10);
-            flight.runner.start_next_leg();
+            while flight.runner.target() < 3 {
+                flight.runner.advance(flight.runner.remaining_time());
+                flight.runner.start_next_leg();
+            }
             flight.runner.advance(extra_time);
             flight.defense.positions[Fielder::Second as usize] = crate::defense::SECOND_BASE;
             flight.defense.positions[Fielder::Third as usize] = crate::defense::THIRD_BASE;
@@ -775,7 +777,7 @@ mod tests {
 
     #[test]
     fn a_runner_slides_only_on_close_plays_at_second_or_third() {
-        for (base, first, second) in [(1, 0.0, 0.0), (2, 3.95, 0.0), (3, 3.95, 3.10)] {
+        for base in 1..=3 {
             for (runner_time, ball_time, slides) in [(0.26, 0.21, base > 1), (0.26, 0.65, false)] {
                 let mut flight = Flight::new(
                     CENTER,
@@ -786,14 +788,13 @@ mod tests {
                     },
                     Park::Central,
                 );
-                for leg in [first, second] {
-                    if leg != 0.0 {
-                        flight.runner.advance(leg);
-                        flight.runner.start_next_leg();
-                    }
+                while flight.runner.target() < base {
+                    flight.runner.advance(flight.runner.remaining_time());
+                    flight.runner.start_next_leg();
                 }
-                let leg = [3.95, 3.10, 3.25][base - 1];
-                flight.runner.advance(leg - runner_time);
+                flight
+                    .runner
+                    .advance(flight.runner.remaining_time() - runner_time);
                 let bag = [
                     crate::defense::FIRST_BASE,
                     crate::defense::SECOND_BASE,
@@ -816,10 +817,10 @@ mod tests {
     #[test]
     fn a_close_attempt_can_be_lost_or_saved_by_tapping() {
         for (chance, tapping, ball_time, target, expected) in [
-            (false, false, 2.91, 1, Outcome::Fair),
-            (true, false, 2.91, 2, Outcome::BaseOut(Fielder::Second)),
-            (true, true, 2.91, 2, Outcome::Double),
-            (true, true, 2.70, 1, Outcome::Fair),
+            (false, false, 1.73, 1, Outcome::Fair),
+            (true, false, 1.73, 2, Outcome::BaseOut(Fielder::Second)),
+            (true, true, 1.73, 2, Outcome::Double),
+            (true, true, 1.58, 1, Outcome::Fair),
         ] {
             let mut flight = Flight::new(
                 CENTER,
@@ -831,7 +832,7 @@ mod tests {
                 Park::Central,
             );
             flight.try_close_advance = chance;
-            flight.runner.advance(3.95 - STEP);
+            flight.runner.advance(flight.runner.remaining_time() - STEP);
             flight.defense.positions[Fielder::Second as usize] = crate::defense::SECOND_BASE;
             flight.defense.positions[Fielder::Shortstop as usize] =
                 crate::defense::SECOND_BASE - Vec2::Y * 110.0;
@@ -843,7 +844,7 @@ mod tests {
             );
             returning.advance(&mut flight.defense, returning.remaining() - ball_time);
             flight.returning = Some(returning);
-            if ball_time < 2.8 {
+            if ball_time < 1.65 {
                 // Even with acceleration already active, this throw is too fast.
                 flight.runner.tap();
             }
@@ -861,15 +862,12 @@ mod tests {
 
     #[test]
     fn runners_hold_at_second_or_contest_third_in_both_parks() {
-        for (park, timing, offset) in [
-            (Park::Central, -0.060, vec2(0.025, 0.071)),
-            (Park::Sunset, -0.060, vec2(0.025, 0.071)),
-        ] {
-            let hit = Grade {
-                contact: Contact::Touch,
-                timing,
-                offset,
-            };
+        let hit = Grade {
+            contact: Contact::Touch,
+            timing: 0.0,
+            offset: vec2(0.025, 0.14),
+        };
+        for park in [Park::Central, Park::Sunset] {
             for (tap, expected) in [(false, Outcome::Double), (true, Outcome::Triple)] {
                 let mut flight = Flight::new(CENTER, hit, park);
                 let result = (0..1800).find_map(|step| {

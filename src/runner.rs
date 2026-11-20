@@ -3,7 +3,7 @@ use macroquad::prelude::*;
 use crate::defense::{FIRST_BASE, SECOND_BASE, THIRD_BASE};
 
 const BASES: [Vec2; 4] = [Vec2::ZERO, FIRST_BASE, SECOND_BASE, THIRD_BASE];
-const ARRIVALS: [f64; 4] = [0.0, 3.95, 7.05, 10.30];
+const ARRIVALS: [f64; 4] = [0.0, 3.05, 4.90, 7.75];
 pub const SLIDE_SECONDS: f64 = 0.34;
 const BOOST_DURATION: f64 = 0.30;
 const BOOST_EXTRA_SPEED: f64 = 0.12;
@@ -104,7 +104,7 @@ mod tests {
     fn runner_touches_all_three_bases_and_stops_at_third() {
         let mut runner = Runner::default();
         assert_eq!(runner.position(), Vec2::ZERO);
-        runner.advance(3.94);
+        runner.advance(3.04);
         assert_eq!(runner.reached(), 0);
         runner.advance(0.01);
         assert_eq!(runner.reached(), 1);
@@ -112,7 +112,9 @@ mod tests {
         runner.advance(5.0);
         assert_eq!(runner.position(), FIRST_BASE);
         runner.start_next_leg();
-        runner.advance(3.10);
+        runner.advance(1.84);
+        assert_eq!(runner.reached(), 1);
+        runner.advance(0.01);
         assert_eq!(runner.reached(), 2);
         assert_eq!(runner.position(), SECOND_BASE);
         runner.start_next_leg();
