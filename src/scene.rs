@@ -24,12 +24,20 @@ pub fn batter_camera(display: DisplayProfile) -> Camera3D {
     batting_view(size.x, size.y, display)
 }
 
-fn batting_view(width: f32, height: f32, _display: DisplayProfile) -> Camera3D {
+fn batting_view(width: f32, height: f32, display: DisplayProfile) -> Camera3D {
     let mut camera = field_camera();
     let compact = ((768.0 - width.min(height)) / 268.0).clamp(0.0, 1.0);
     camera.position = camera.position.lerp(vec3(0.035, 1.14, 2.65), compact);
     // Use logical pixels (UIKit points on iOS), with the current iPad size as the cap.
-    let zone_width = strike_zone_width(width, height);
+    let zone_width = strike_zone_width(
+        width,
+        height,
+        if display.mobile() {
+            ((600.0 - width.min(height)) / 100.0).clamp(0.0, 1.0)
+        } else {
+            0.0
+        },
+    );
     let plate_distance = camera.position.distance(on_plate(CENTER));
     let focal_length = plate_distance * zone_width / (ZONE_MAX.x - ZONE_MIN.x);
     camera.fovy = 2.0 * (height / (2.0 * focal_length)).atan();
@@ -37,12 +45,14 @@ fn batting_view(width: f32, height: f32, _display: DisplayProfile) -> Camera3D {
     camera
 }
 
-fn strike_zone_width(width: f32, height: f32) -> f32 {
+fn strike_zone_width(width: f32, height: f32, mobile_zoom: f32) -> f32 {
     const TABLET_WIDTH: f32 = 200.0;
     let tablet = ((width.min(height) - 500.0) / 268.0).clamp(0.0, 1.0);
     let size = TABLET_WIDTH * (2.0 + tablet) / 3.0;
     let zone = ZONE_MAX - ZONE_MIN;
-    size.min(width * 0.50).min(height * 0.55 * zone.x / zone.y)
+    (size * (1.0 + mobile_zoom * 2.0 / 3.0))
+        .min(width * (0.50 + mobile_zoom * 0.08))
+        .min(height * (0.55 + mobile_zoom * 0.19) * zone.x / zone.y)
 }
 
 fn batter_target_height(camera: &Camera3D, center_offset: f32) -> f32 {
@@ -747,11 +757,11 @@ mod tests {
             let span = (b - a).abs() * 0.5;
             let drawn_width = span.x * width;
             assert!(
-                (115.0..=138.0).contains(&drawn_width),
+                (158.0..=225.0).contains(&drawn_width),
                 "{width}x{height}: {drawn_width}"
             );
             let desktop = batting_view(width, height, DisplayProfile::Desktop);
-            assert_eq!(desktop.fovy, camera.fovy);
+            assert!(desktop.fovy > camera.fovy);
             assert_eq!(desktop.position, camera.position);
         }
     }
