@@ -5,6 +5,17 @@ use crate::play::{Phase, Play};
 
 pub const CHALLENGE_LENGTH: u32 = 10;
 const RESULT_SECONDS: f64 = 1.45;
+const STRIKES_PER_BATCH: usize = 7;
+const PITCHES_PER_BATCH: usize = CHALLENGE_LENGTH as usize;
+
+fn shuffled_calls() -> [bool; PITCHES_PER_BATCH] {
+    let mut calls = [false; PITCHES_PER_BATCH];
+    calls[..STRIKES_PER_BATCH].fill(true);
+    for i in (1..calls.len()).rev() {
+        calls.swap(i, macroquad::rand::gen_range(0, i + 1));
+    }
+    calls
+}
 
 #[derive(Clone, Copy)]
 pub struct AtBat {
@@ -24,13 +35,14 @@ impl Mode {
     fn next_pitch(
         self,
         completed: u32,
+        strike: bool,
         delivery: Delivery,
         speed: PitchSpeed,
         mix: PitchMix,
     ) -> Pitch {
         match self {
-            Self::Challenge => Pitch::random(None, completed < 2, speed, delivery, mix),
-            Self::Practice { kind, .. } => Pitch::random(kind, false, speed, delivery, mix),
+            Self::Challenge => Pitch::random(None, completed < 2, strike, speed, delivery, mix),
+            Self::Practice { kind, .. } => Pitch::random(kind, false, strike, speed, delivery, mix),
         }
     }
 }
@@ -73,6 +85,7 @@ pub struct Session {
     pub paused: bool,
     pub history_open: bool,
     mix: PitchMix,
+    calls: [bool; PITCHES_PER_BATCH],
 }
 
 impl Session {
@@ -83,14 +96,16 @@ impl Session {
         park: Park,
         mix: PitchMix,
     ) -> Self {
+        let calls = shuffled_calls();
         Self {
             mode,
             speed,
             record: Record::default(),
-            play: Play::new(mode.next_pitch(0, delivery, speed, mix), park),
+            play: Play::new(mode.next_pitch(0, calls[0], delivery, speed, mix), park),
             paused: false,
             history_open: false,
             mix,
+            calls,
         }
     }
 
@@ -128,8 +143,13 @@ impl Session {
         if matches!(self.mode, Mode::Challenge) && self.record.completed >= CHALLENGE_LENGTH {
             return Some(self.record);
         }
+        let index = self.record.completed as usize % PITCHES_PER_BATCH;
+        if index == 0 {
+            self.calls = shuffled_calls();
+        }
         self.play.next_pitch(self.mode.next_pitch(
             self.record.completed,
+            self.calls[index],
             self.play.pitch.delivery,
             self.speed,
             self.mix,
@@ -162,7 +182,7 @@ mod tests {
                 assert_eq!(run.record.completed, completed);
                 assert!((129.0..147.0).contains(&run.play.pitch.average_kmh()));
                 // Take the pitch and wait through its result to reach the next delivery.
-                run.tick(crate::batting::WINDUP + run.play.pitch.end_time() + 0.01);
+                run.tick(-run.play.time + run.play.pitch.end_time() + 0.01);
                 run.tick(RESULT_SECONDS + 0.01);
             }
         }
@@ -202,9 +222,44 @@ mod tests {
             (1..=CHALLENGE_LENGTH).collect::<Vec<_>>()
         );
         assert_eq!(entries[0].1.pitch, PitchKind::Fastball);
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|(_, entry)| entry.outcome == Outcome::Strike)
+                .count(),
+            STRIKES_PER_BATCH
+        );
         assert!(entries.iter().all(|(_, entry)| {
             matches!(entry.outcome, Outcome::Strike | Outcome::Ball) && entry.distance.is_none()
         }));
+    }
+
+    #[test]
+    fn practice_repeats_shuffled_seven_strike_batches() {
+        let mut run = Session::new(
+            Mode::Practice {
+                kind: Some(PitchKind::Slider),
+            },
+            Delivery::default(),
+            PitchSpeed::Normal,
+            Park::Central,
+            PitchMix::default(),
+        );
+        for batch in 0..3 {
+            let mut strikes = 0;
+            for _ in 0..PITCHES_PER_BATCH {
+                run.tick(-run.play.time + run.play.pitch.end_time() + 0.01);
+                strikes += usize::from(
+                    matches!(run.play.phase, Phase::Result(ref card) if card.outcome == Outcome::Strike),
+                );
+                run.tick(RESULT_SECONDS + 0.01);
+            }
+            assert_eq!(strikes, STRIKES_PER_BATCH);
+            assert_eq!(
+                run.record.completed as usize,
+                (batch + 1) * PITCHES_PER_BATCH
+            );
+        }
     }
 
     #[test]
