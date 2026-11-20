@@ -112,7 +112,7 @@ impl Flight {
         let speed = if strong {
             35.0 + 23.0 * squared_quality
         } else {
-            26.0 + 10.0 * squared_quality
+            24.0 + 8.0 * squared_quality
         };
         let horizontal =
             ((grade.timing / HIT_TIMING) as f32 * 1.05 + grade.offset.x * 0.48).clamp(-1.18, 1.18);
@@ -841,8 +841,8 @@ mod tests {
     #[test]
     fn runners_hold_at_second_or_contest_third_in_both_parks() {
         for (park, timing, offset) in [
-            (Park::Central, -0.060, vec2(0.025, 0.089)),
-            (Park::Sunset, -0.060, vec2(0.025, 0.089)),
+            (Park::Central, -0.060, vec2(0.025, 0.071)),
+            (Park::Sunset, -0.060, vec2(0.025, 0.071)),
         ] {
             let hit = Grade {
                 contact: Contact::Touch,
