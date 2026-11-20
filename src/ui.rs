@@ -113,7 +113,7 @@ impl Settings {
     }
 
     pub fn sensitivity(&self) -> f32 {
-        [0.70, 1.0, 1.40][self.sensitivity]
+        [1.05, 1.50, 2.10][self.sensitivity]
     }
 
     pub fn change(&mut self, action: Action) {
