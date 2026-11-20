@@ -14,10 +14,15 @@ for family in iPhone iPad; do
     fi
     xcrun simctl bootstatus "$udid" -b
     xcrun simctl install "$udid" "$app"
-    launch="$(xcrun simctl launch "$udid" "$bundle_id")"
+    output="$PWD/dist/ios/$family-launch.log"
+    launch="$(xcrun simctl launch --stdout="$output" --stderr="$output.err" "$udid" "$bundle_id")"
     pid="${launch##*: }"
     sleep 3
-    kill -0 "$pid"
+    if ! kill -0 "$pid"; then
+        cat "$output" "$output.err"
+        xcrun simctl spawn "$udid" log show --last 5m --predicate 'process == "Batting"' || true
+        exit 1
+    fi
     xcrun simctl io "$udid" screenshot "dist/ios/$family.png"
     # Scene adoption must also forward pause/resume to Miniquad. The same
     # process must survive a trip to the background and return to the game.
