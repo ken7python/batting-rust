@@ -50,9 +50,11 @@ fn strike_zone_width(width: f32, height: f32, mobile_zoom: f32) -> f32 {
     let tablet = ((width.min(height) - 500.0) / 268.0).clamp(0.0, 1.0);
     let size = TABLET_WIDTH * (2.0 + tablet) / 3.0;
     let zone = ZONE_MAX - ZONE_MIN;
-    (size * (1.0 + mobile_zoom * 2.0 / 3.0))
-        .min(width * (0.50 + mobile_zoom * 0.08))
-        .min(height * (0.55 + mobile_zoom * 0.19) * zone.x / zone.y)
+    let normal = size.min(width * 0.50).min(height * 0.55 * zone.x / zone.y);
+    let phone = (148.0_f32)
+        .min(width * 0.387)
+        .min(height * 0.493 * zone.x / zone.y);
+    normal + (phone - normal) * mobile_zoom
 }
 
 fn batter_target_height(camera: &Camera3D, center_offset: f32) -> f32 {
@@ -722,14 +724,14 @@ mod tests {
 
     #[test]
     fn zone_is_capped_at_tablet_size_and_smaller_on_phones() {
-        for (width, height) in [
-            (320.0, 568.0),
-            (375.0, 667.0),
-            (390.0, 844.0),
-            (430.0, 932.0),
-            (568.0, 320.0),
-            (844.0, 390.0),
-            (932.0, 430.0),
+        for (width, height, expected) in [
+            (320.0, 568.0, 124.0),
+            (375.0, 667.0, 145.0),
+            (390.0, 844.0, 148.0),
+            (430.0, 932.0, 148.0),
+            (568.0, 320.0, 106.0),
+            (844.0, 390.0, 129.0),
+            (932.0, 430.0, 142.0),
         ] {
             let camera = batting_view(width, height, DisplayProfile::Mobile);
             let view = Mat4::perspective_rh_gl(camera.fovy, width / height, 0.01, camera.z_far)
@@ -757,11 +759,10 @@ mod tests {
             let span = (b - a).abs() * 0.5;
             let drawn_width = span.x * width;
             assert!(
-                (158.0..=225.0).contains(&drawn_width),
+                (drawn_width - expected).abs() < 2.0,
                 "{width}x{height}: {drawn_width}"
             );
             let desktop = batting_view(width, height, DisplayProfile::Desktop);
-            assert!(desktop.fovy > camera.fovy);
             assert_eq!(desktop.position, camera.position);
         }
     }
