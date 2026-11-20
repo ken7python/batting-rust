@@ -271,7 +271,7 @@ impl<'a> Ui<'a> {
         )
         .width;
         let text_size = if measured_width > available_width {
-            base_size * available_width / measured_width
+            base_size * available_width / measured_width / self.scale
         } else {
             base_size
         };
