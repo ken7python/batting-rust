@@ -270,7 +270,7 @@ async fn game() {
                 && input
                     .actions
                     .iter()
-                    .any(|action| matches!(*action, BatInput::Press(_)))
+                    .any(|action| matches!(*action, BatInput::Press(p) if !ui.pause_rect().contains(p / dpi)))
             {
                 flight.runner.tap();
             }

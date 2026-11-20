@@ -8,6 +8,7 @@ use crate::runner::{Runner, SLIDE_SECONDS};
 pub const STEP: f64 = 1.0 / 120.0;
 // Speed up ball travel without increasing its range or speeding up runners.
 const BALL_TEMPO: f32 = 1.35;
+const CLOSE_ADVANCE_MARGIN: f64 = 0.16;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Outcome {
@@ -84,6 +85,7 @@ pub struct Flight {
     pub velocity: Vec3,
     pub elapsed: f32,
     pub strong: bool,
+    pub try_close_advance: bool,
     pub confident: bool,
     pub home_run: bool,
     pub defense: Defense,
@@ -125,6 +127,7 @@ impl Flight {
             velocity,
             elapsed: 0.0,
             strong,
+            try_close_advance: false,
             confident,
             home_run: false,
             defense: Defense::new(park),
@@ -154,7 +157,9 @@ impl Flight {
         !self.home_run
             && !self.confident
             && self.runner.moving()
-            && !self.returning.is_some_and(|returning| returning.arrived())
+            && !self.returning.is_some_and(|returning| {
+                returning.arrived() && returning.base == self.runner.target()
+            })
     }
 
     fn step(&mut self) -> Option<Outcome> {
@@ -187,9 +192,16 @@ impl Flight {
             && !self.runner.moving()
             && self.runner.target() < 3
             && !self.home_run
-            && self.time_to_defend_next_base() >= self.runner.next_leg_time() + 0.05
         {
-            self.runner.start_next_leg();
+            let ball_time = self.time_to_defend_next_base();
+            let runner_time = self.runner.next_leg_time();
+            if ball_time >= runner_time + 0.05 {
+                self.runner.start_next_leg();
+            } else if self.try_close_advance && ball_time >= runner_time - CLOSE_ADVANCE_MARGIN {
+                // Commit once on a marginal play. The real throw and taps decide the race.
+                self.try_close_advance = false;
+                self.runner.start_next_leg();
+            }
         }
         result
     }
@@ -722,6 +734,43 @@ mod tests {
                     "base {base} with ball time {ball_time}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn a_rare_close_attempt_can_be_lost_or_saved_by_tapping() {
+        for (chance, tapping, expected) in [
+            (false, false, Outcome::Fair),
+            (true, false, Outcome::BaseOut(Fielder::Second)),
+            (true, true, Outcome::Double),
+        ] {
+            let mut flight = Flight::new(
+                CENTER,
+                Grade {
+                    contact: Contact::Touch,
+                    timing: 0.0,
+                    offset: Vec2::ZERO,
+                },
+                Park::Central,
+            );
+            flight.try_close_advance = chance;
+            flight.runner.advance(3.95 - STEP);
+            flight.defense.positions[Fielder::Second as usize] = crate::defense::SECOND_BASE;
+            flight.defense.positions[Fielder::Center as usize] =
+                crate::defense::SECOND_BASE - Vec2::Y * 110.0;
+            let mut returning =
+                FieldReturn::new(Fielder::Center, vec3(0.0, 1.1, -148.8), &flight.defense, 2);
+            returning.advance(&mut flight.defense, returning.remaining() - 3.04);
+            flight.returning = Some(returning);
+            assert!(flight.advance(STEP).is_none());
+            assert_eq!(flight.runner.target(), if chance { 2 } else { 1 });
+            let outcome = (0..600).find_map(|step| {
+                if tapping && step % 28 == 0 && flight.can_boost_runner() {
+                    flight.runner.tap();
+                }
+                flight.advance(STEP)
+            });
+            assert_eq!(outcome, Some(expected));
         }
     }
 
