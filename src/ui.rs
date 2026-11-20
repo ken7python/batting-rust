@@ -129,20 +129,30 @@ enum Draw {
 pub struct Ui<'a> {
     font: &'a Font,
     scale: f32,
+    area: Rect,
+    touch: bool,
     mouse: Vec2,
     pressed: bool,
     draws: Vec<Draw>,
 }
 
 impl<'a> Ui<'a> {
-    pub fn new(font: &'a Font) -> Self {
+    pub fn new(font: &'a Font, area: Rect, press: Option<Vec2>, touch: bool) -> Self {
         Self {
             font,
-            scale: (screen_width() / 980.0)
-                .min(screen_height() / 680.0)
-                .clamp(0.40, 1.7),
-            mouse: Vec2::from(mouse_position()),
-            pressed: is_mouse_button_pressed(MouseButton::Left),
+            scale: (area.w / 980.0)
+                .min(area.h / 680.0)
+                .clamp(if touch { 0.01 } else { 0.40 }, 1.7),
+            area,
+            touch,
+            mouse: press.unwrap_or_else(|| {
+                if touch {
+                    Vec2::splat(-1.0)
+                } else {
+                    Vec2::from(mouse_position())
+                }
+            }),
+            pressed: press.is_some(),
             draws: Vec::new(),
         }
     }
@@ -229,9 +239,9 @@ impl<'a> Ui<'a> {
 
     pub fn menu(&mut self, settings: &Settings) -> Option<Action> {
         let s = self.scale;
-        let audio_x = screen_width() - 160.0 * s;
+        let audio_x = self.area.right() - 160.0 * s;
         let music = self.button(
-            Rect::new(audio_x, 20.0 * s, 140.0 * s, 42.0 * s),
+            Rect::new(audio_x, self.area.y + 20.0 * s, 140.0 * s, 42.0 * s),
             if settings.music {
                 "BGM オン"
             } else {
@@ -240,7 +250,7 @@ impl<'a> Ui<'a> {
             false,
         );
         let effects = self.button(
-            Rect::new(audio_x, 72.0 * s, 140.0 * s, 42.0 * s),
+            Rect::new(audio_x, self.area.y + 72.0 * s, 140.0 * s, 42.0 * s),
             if settings.effects {
                 "効果音 オン"
             } else {
@@ -248,8 +258,8 @@ impl<'a> Ui<'a> {
             },
             false,
         );
-        let x = 28.0 * s;
-        let y = (screen_height() - 657.0 * s) * 0.5;
+        let x = self.area.x + 28.0 * s;
+        let y = self.area.center().y - 657.0 * s * 0.5;
         let w = 436.0 * s;
         let rect = |x0, y0, width, height| Rect::new(x + x0 * s, y + y0 * s, width * s, height * s);
         self.panel(Rect::new(x, y, w, 657.0 * s));
@@ -322,7 +332,11 @@ impl<'a> Ui<'a> {
             false,
         );
         self.text(
-            "操作  左ボタンを押したままマウスを動かす",
+            if self.touch {
+                "操作  ドラッグで照準を動かす"
+            } else {
+                "操作  左ボタンを押したままマウスを動かす"
+            },
             x + 24.0 * s,
             y + 635.0 * s,
             16.0,
@@ -349,13 +363,18 @@ impl<'a> Ui<'a> {
 
     pub fn pause_rect(&self) -> Rect {
         let s = self.scale;
-        Rect::new(screen_width() - 140.0 * s, 20.0 * s, 120.0 * s, 42.0 * s)
+        Rect::new(
+            self.area.right() - 140.0 * s,
+            self.area.y + 20.0 * s,
+            120.0 * s,
+            42.0 * s,
+        )
     }
 
     pub fn game(&mut self, session: &Session) -> Option<Action> {
         let s = self.scale;
-        let x = 20.0 * s;
-        let y = 20.0 * s;
+        let x = self.area.x + 20.0 * s;
+        let y = self.area.y + 20.0 * s;
         let mut action = None;
         let shown_pitch =
             session.record.completed + u32::from(!matches!(session.play.phase, Phase::Result(_)));
@@ -405,7 +424,7 @@ impl<'a> Ui<'a> {
                 self.runner_diamond(&view.runner, false);
             }
         } else if let Phase::Flight(flight) = &session.play.phase {
-            let h = screen_height();
+            let h = self.area.bottom();
             self.panel(Rect::new(x, h - 89.0 * s, 195.0 * s, 68.0 * s));
             let (label, detail) = if let Some(returning) = flight.returning {
                 let label = if returning.carrying() {
@@ -459,10 +478,12 @@ impl<'a> Ui<'a> {
                 "スイング済み"
             } else if session.play.aim.held {
                 "離してスイング"
+            } else if self.touch {
+                "押したままドラッグ"
             } else {
                 "左ボタンを押してドラッグ"
             };
-            let h = screen_height();
+            let h = self.area.bottom();
             self.panel(Rect::new(x, h - 59.0 * s, 270.0 * s, 40.0 * s));
             self.text(hint, x + 13.0 * s, h - 32.0 * s, 17.0, CREAM);
         }
@@ -475,8 +496,8 @@ impl<'a> Ui<'a> {
                 screen_height(),
                 Color::new(0.04, 0.10, 0.11, 0.63),
             );
-            let x = (screen_width() - 320.0 * s) * 0.5;
-            let y = (screen_height() - 218.0 * s) * 0.5;
+            let x = self.area.center().x - 160.0 * s;
+            let y = self.area.center().y - 109.0 * s;
             self.panel(Rect::new(x, y, 320.0 * s, 218.0 * s));
             self.text("一時停止", x + 22.0 * s, y + 49.0 * s, 32.0, CREAM);
             if self.button(
@@ -499,19 +520,26 @@ impl<'a> Ui<'a> {
 
     fn field_call(&mut self, label: &str, color: Color) {
         let s = self.scale;
-        let center = screen_width() * 0.5;
+        let center = self.area.center().x;
+        let top = self.area.y;
         let width = 145.0 * s;
         let x = center - width * 0.5;
-        self.panel(Rect::new(x, 23.0 * s, width, 46.0 * s));
-        self.fill(x, 23.0 * s, width, 3.0 * s, color);
+        self.panel(Rect::new(x, top + 23.0 * s, width, 46.0 * s));
+        self.fill(x, top + 23.0 * s, width, 3.0 * s, color);
         let size = 24.0;
         let measured = measure_text(label, Some(self.font), (size * s).round() as u16, 1.0);
-        self.text(label, center - measured.width * 0.5, 55.0 * s, size, color);
+        self.text(
+            label,
+            center - measured.width * 0.5,
+            top + 55.0 * s,
+            size,
+            color,
+        );
     }
 
     fn runner_diamond(&mut self, runner: &Runner, can_boost: bool) {
         let s = self.scale;
-        let home = vec2(screen_width() - 67.0 * s, screen_height() - 94.0 * s);
+        let home = vec2(self.area.right() - 67.0 * s, self.area.bottom() - 94.0 * s);
         let corner = 23.0 * s;
         let bases = [
             home,
@@ -566,8 +594,8 @@ impl<'a> Ui<'a> {
 
     fn feedback(&mut self, session: &Session, result: &ResultCard) {
         let s = self.scale;
-        let x = (screen_width() - 422.0 * s) * 0.5;
-        let y = screen_height() - 149.0 * s;
+        let x = self.area.center().x - 211.0 * s;
+        let y = self.area.bottom() - 149.0 * s;
         self.panel(Rect::new(x, y, 422.0 * s, 128.0 * s));
         let pitch = session.play.pitch.kind.label();
         let location = if session.play.pitch.bounce_time.is_some() {
@@ -611,8 +639,8 @@ impl<'a> Ui<'a> {
 
     pub fn summary(&mut self, record: Record) -> Option<Action> {
         let s = self.scale;
-        let x = (screen_width() - 390.0 * s) * 0.5;
-        let y = (screen_height() - 385.0 * s) * 0.5;
+        let x = self.area.center().x - 195.0 * s;
+        let y = self.area.center().y - 192.5 * s;
         self.panel(Rect::new(x, y, 390.0 * s, 385.0 * s));
         self.fill(x, y, 390.0 * s, 4.0 * s, AMBER);
         self.text(
