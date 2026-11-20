@@ -16,6 +16,7 @@ const CREAM: Color = Color::from_rgba(245, 241, 219, 255);
 const MUTED: Color = Color::from_rgba(179, 199, 183, 255);
 const AMBER: Color = Color::from_rgba(255, 201, 95, 255);
 const AIM_CALL_COLOR: Color = Color::from_rgba(161, 236, 154, 255);
+const PREVIEW_LEAD: f64 = 0.25;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PreviewTiming {
@@ -32,7 +33,11 @@ impl PreviewTiming {
     }
 
     pub fn visible(self, pitch_time: f64) -> bool {
-        self == Self::BeforeRelease || pitch_time >= 0.0
+        let start = match self {
+            Self::BeforeRelease => -PREVIEW_LEAD,
+            Self::AfterRelease => 0.0,
+        };
+        pitch_time >= start
     }
 }
 
@@ -1008,9 +1013,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn preview_modes_toggle_at_the_release_instant() {
+    fn preview_modes_start_at_their_own_release_thresholds() {
         let mut settings = Settings::default();
+        assert!(!settings.preview.visible(-crate::batting::WINDUP));
+        assert!(!settings.preview.visible(-PREVIEW_LEAD - 0.001));
+        assert!(settings.preview.visible(-PREVIEW_LEAD));
         assert!(settings.preview.visible(-0.01));
+        assert!(settings.preview.visible(0.01));
         settings.change(Action::Preview(PreviewTiming::AfterRelease));
         assert!(!settings.preview.visible(-0.01));
         assert!(settings.preview.visible(0.0));
