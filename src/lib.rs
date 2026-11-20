@@ -21,7 +21,7 @@ use play::{Phase, Play, ResultCard};
 use scene::*;
 use session::{Mode, Record, Session};
 use sound::Sounds;
-use ui::{Action, Settings, Ui};
+use ui::{Action, PreviewTiming, Settings, Ui};
 
 const NATIVE_TOUCH: bool = cfg!(any(target_os = "ios", target_os = "android"));
 
@@ -404,7 +404,7 @@ fn draw_idle(camera: &Camera3D, delivery: Delivery, park: Park) {
     set_default_camera();
 }
 
-fn draw_play(play: &Play, camera: &Camera3D, preview: bool) {
+fn draw_play(play: &Play, camera: &Camera3D, preview: PreviewTiming) {
     let mut throw_marker = None;
     match &play.phase {
         Phase::Flight(flight) => {
@@ -515,16 +515,21 @@ fn draw_play(play: &Play, camera: &Camera3D, preview: bool) {
     }
     set_default_camera();
     if let Some(point) = throw_marker {
-        draw_circle(point.x, point.y, 3.0, WHITE);
-        draw_circle_lines(point.x, point.y, 6.0, 1.4, SKYBLUE);
+        let scale = (screen_height() / 720.0).clamp(0.90, 2.0);
+        draw_circle(point.x, point.y, 3.0 * scale, WHITE);
+        draw_circle_lines(point.x, point.y, 6.0 * scale, 1.4 * scale, SKYBLUE);
     }
     match &play.phase {
         Phase::Pitch => {
             reticle(camera, &play.aim);
-            if preview {
+            let show_preview = match preview {
+                PreviewTiming::BeforeRelease => true,
+                PreviewTiming::AfterRelease => play.time >= 0.0,
+            };
+            if show_preview {
                 let predicted = play.pitch.preview_point(play.time);
                 let p = project(camera, predicted);
-                let radius = (screen_height() / 720.0).clamp(0.75, 2.0) * 5.0;
+                let radius = (screen_height() / 720.0).clamp(0.90, 2.0) * 6.0;
                 let color = if predicted.z < 0.0 { GOLD } else { SKYBLUE };
                 draw_circle(p.x, p.y, radius + 1.5, BLACK);
                 draw_circle(p.x, p.y, radius, color);

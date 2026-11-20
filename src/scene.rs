@@ -495,14 +495,14 @@ pub fn reticle(camera: &Camera3D, aim: &Aim) {
     let top = a.y.min(b.y).floor();
     let width = (b.x - a.x).abs().ceil();
     let height = (a.y - b.y).abs().ceil();
-    let thickness = (screen_height() / 360.0).clamp(2.0, 4.0);
+    let thickness = (screen_height() / 360.0).clamp(2.5, 4.5);
     let color = Color::new(0.98, 0.98, 0.83, 0.85);
     draw_rectangle(left, top, width, thickness, color);
     draw_rectangle(left, top + height - thickness, width, thickness, color);
     draw_rectangle(left, top, thickness, height, color);
     draw_rectangle(left + width - thickness, top, thickness, height, color);
     let p = project(camera, on_plate(aim.point));
-    let scale = (screen_height() / 720.0).clamp(0.75, 2.0);
+    let scale = (screen_height() / 720.0).clamp(0.90, 2.0);
     let tint = if aim.held {
         Color::from_rgba(181, 255, 102, 255)
     } else {

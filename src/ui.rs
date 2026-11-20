@@ -16,6 +16,28 @@ const MUTED: Color = Color::from_rgba(179, 199, 183, 255);
 const AMBER: Color = Color::from_rgba(255, 201, 95, 255);
 const AIM_CALL_COLOR: Color = Color::from_rgba(161, 236, 154, 255);
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum PreviewTiming {
+    BeforeRelease,
+    AfterRelease,
+}
+
+impl PreviewTiming {
+    fn label(self) -> &'static str {
+        match self {
+            Self::BeforeRelease => "リリース前",
+            Self::AfterRelease => "リリース後",
+        }
+    }
+
+    fn next(self) -> Self {
+        match self {
+            Self::BeforeRelease => Self::AfterRelease,
+            Self::AfterRelease => Self::BeforeRelease,
+        }
+    }
+}
+
 fn hit_accent(outcome: Outcome) -> Option<Color> {
     match outcome {
         Outcome::Fair => Some(AIM_CALL_COLOR),
@@ -51,7 +73,7 @@ pub enum Action {
 pub struct Settings {
     pitch: usize,
     pub speed: PitchSpeed,
-    pub preview: bool,
+    pub preview: PreviewTiming,
     sensitivity: usize,
     pub delivery: Delivery,
     pub park: Park,
@@ -65,7 +87,7 @@ impl Default for Settings {
         Self {
             pitch: 0,
             speed: PitchSpeed::default(),
-            preview: true,
+            preview: PreviewTiming::BeforeRelease,
             sensitivity: 1,
             delivery: Delivery::default(),
             park: Park::default(),
@@ -95,7 +117,7 @@ impl Settings {
         match action {
             Action::Pitch => self.pitch = (self.pitch + 1) % (PitchKind::ALL.len() + 1),
             Action::Speed(speed) => self.speed = speed,
-            Action::Preview => self.preview = !self.preview,
+            Action::Preview => self.preview = self.preview.next(),
             Action::Sensitivity => self.sensitivity = (self.sensitivity + 1) % 3,
             Action::Hand => {
                 self.delivery.hand = if self.delivery.hand == ThrowingHand::Right {
@@ -152,9 +174,9 @@ impl<'a> Ui<'a> {
     pub fn new(font: &'a Font, area: Rect, press: Option<Vec2>, touch: bool) -> Self {
         Self {
             font,
-            scale: (area.w / 980.0)
+            scale: (area.w / if touch { 820.0 } else { 980.0 })
                 .min(area.h / 680.0)
-                .clamp(if touch { 0.01 } else { 0.40 }, 1.7),
+                .clamp(if touch { 0.55 } else { 0.40 }, 1.7),
             area,
             touch,
             mouse: press.unwrap_or_else(|| {
@@ -239,11 +261,25 @@ impl<'a> Ui<'a> {
         if !primary {
             self.draws.push(Draw::Border(rect, LINE));
         }
+        let base_size = 20.0;
+        let available_width = rect.w - 28.0 * self.scale;
+        let measured_width = measure_text(
+            title,
+            Some(self.font),
+            (base_size * self.scale).round() as u16,
+            1.0,
+        )
+        .width;
+        let text_size = if measured_width > available_width {
+            base_size * available_width / measured_width
+        } else {
+            base_size
+        };
         self.text(
             title,
             rect.x + 14.0 * self.scale,
             rect.y + rect.h * 0.63,
-            20.0,
+            text_size,
             if primary { INK } else { CREAM },
         );
         hovered && self.pressed
@@ -299,17 +335,13 @@ impl<'a> Ui<'a> {
             .selected_pitch()
             .map_or("ランダム", PitchKind::label);
         let pitch = self.button(
-            rect(24.0, 383.0, 238.0, 44.0),
+            rect(24.0, 383.0, 220.0, 44.0),
             &format!("球種  {pitch_label}"),
             false,
         );
         let preview = self.button(
-            rect(270.0, 383.0, 142.0, 44.0),
-            if settings.preview {
-                "予告  あり"
-            } else {
-                "予告  なし"
-            },
+            rect(252.0, 383.0, 160.0, 44.0),
+            &format!("予測  {}", settings.preview.label()),
             false,
         );
         let sensitivity_label = ["低い", "標準", "高い"][settings.sensitivity];
@@ -651,15 +683,17 @@ impl<'a> Ui<'a> {
 
     fn runner_diamond(&mut self, runner: &Runner, can_boost: bool) {
         let s = self.scale;
+        let size_boost = if self.touch { 1.18 } else { 1.0 };
+        let s = s * size_boost;
         let home = vec2(self.area.right() - 67.0 * s, self.area.bottom() - 94.0 * s);
-        let corner = 23.0 * s;
+        let corner = 27.0 * s;
         let bases = [
             home,
             home + vec2(corner, -corner),
             home + vec2(0.0, -2.0 * corner),
             home + vec2(-corner, -corner),
         ];
-        let panel = Rect::new(home.x - 45.0 * s, home.y - 58.0 * s, 90.0 * s, 70.0 * s);
+        let panel = Rect::new(home.x - 48.0 * s, home.y - 64.0 * s, 96.0 * s, 76.0 * s);
         self.panel(panel);
         for (index, point) in bases.into_iter().enumerate() {
             let next = bases[(index + 1) % bases.len()];

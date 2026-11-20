@@ -3,6 +3,8 @@ use macroquad::prelude::*;
 use crate::batting::{BALL_RADIUS, CATCH_DELAY, ZONE_MAX, ZONE_MIN};
 
 const BASE_ARC: Vec2 = vec2(0.0, 0.32);
+const RELEASE_DELAY_MIN: f64 = 0.25;
+const RELEASE_DELAY_MAX: f64 = 0.75;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum PitchSpeed {
@@ -126,7 +128,7 @@ impl PitchKind {
             Self::Forkball => "フォーク",
             Self::Changeup => "チェンジアップ",
             Self::TwoSeam => "ツーシーム",
-            Self::Cutter => "カッター",
+            Self::Cutter => "カットボール",
             Self::Sinker => "シンカー",
             Self::Splitter => "スプリット",
             Self::Sweeper => "スイーパー",
@@ -245,6 +247,7 @@ pub struct Pitch {
     pub delivery: Delivery,
     pub crossing: Vec2,
     pub duration: f64,
+    pub release_delay: f64,
     pub bounce_time: Option<f64>,
     break_size: BreakSize,
     wobble_phase: f32,
@@ -265,6 +268,7 @@ impl Pitch {
             delivery,
             crossing,
             duration: f64::from(min + (max - min) * sample) / speed.multiplier(),
+            release_delay: 0.0,
             bounce_time: None,
             break_size,
             wobble_phase: sample * std::f32::consts::TAU,
@@ -299,7 +303,7 @@ impl Pitch {
                 pool[rand::gen_range(0, pool.len())]
             })
         };
-        let crossing = if rand::gen_range(0.0, 1.0) < 0.5 {
+        let crossing = if rand::gen_range(0.0, 1.0) < 0.7 {
             vec2(
                 rand::gen_range(ZONE_MIN.x, ZONE_MAX.x),
                 rand::gen_range(ZONE_MIN.y, ZONE_MAX.y),
@@ -314,14 +318,16 @@ impl Pitch {
                 _ => vec2(rand::gen_range(ZONE_MIN.x, ZONE_MAX.x), ZONE_MIN.y - gap),
             }
         };
-        Self::new(
+        let mut pitch = Self::new(
             kind,
             delivery,
             crossing,
             speed,
             rand::gen_range(0.0, 1.0),
             mix.break_size,
-        )
+        );
+        pitch.release_delay = rand::gen_range(RELEASE_DELAY_MIN, RELEASE_DELAY_MAX);
+        pitch
     }
 
     pub fn end_time(self) -> f64 {
@@ -390,7 +396,7 @@ mod tests {
     use crate::batting::CENTER;
 
     #[test]
-    fn random_pitches_split_strikes_and_close_balls_evenly() {
+    fn random_pitches_are_mostly_strikes() {
         let mut strikes = 0;
         for i in 0..10000 {
             let pitch = Pitch::random(
@@ -400,6 +406,7 @@ mod tests {
                 Delivery::default(),
                 PitchMix::default(),
             );
+            assert!((RELEASE_DELAY_MIN..RELEASE_DELAY_MAX).contains(&pitch.release_delay));
             let p = pitch.crossing;
             let inside =
                 p.x >= ZONE_MIN.x && p.x <= ZONE_MAX.x && p.y >= ZONE_MIN.y && p.y <= ZONE_MAX.y;
@@ -411,7 +418,7 @@ mod tests {
             }
             assert!(pitch.bounce_time.is_none());
         }
-        assert!((4500..5500).contains(&strikes));
+        assert!((6500..7500).contains(&strikes));
     }
 
     #[test]

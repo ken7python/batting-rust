@@ -45,7 +45,7 @@ impl Play {
         Self {
             pitch,
             park,
-            time: -WINDUP,
+            time: -WINDUP - pitch.release_delay,
             result_time: 0.0,
             phase: Phase::Pitch,
             aim: Aim::default(),
@@ -55,7 +55,7 @@ impl Play {
 
     pub fn next_pitch(&mut self, pitch: Pitch) {
         self.pitch = pitch;
-        self.time = -WINDUP;
+        self.time = -WINDUP - pitch.release_delay;
         self.result_time = 0.0;
         self.phase = Phase::Pitch;
         self.aim.next_pitch();
