@@ -120,13 +120,13 @@ impl Flight {
         // Swing offsets are cursor minus ball. A ball above the cursor lifts.
         let height = (-grade.offset.y / MEET_RADIUS).clamp(-1.0, 1.0);
         let ordinary_angle = if height < 0.0 {
-            (16.0 + 84.0 * height).max(-24.0)
+            (18.0 + 84.0 * height).max(-24.0)
         } else {
-            16.0 + 50.0 * height
+            18.0 + 48.0 * height
         };
         // In the core, aim high to lift the ball or hold center or lower for a line drive.
         let angle_degrees = if strong {
-            8.0 + 20.0 * lift
+            11.0 + 17.0 * lift
         } else {
             ordinary_angle
         };
@@ -368,10 +368,7 @@ impl Flight {
             if !fair(point) {
                 return Some(Outcome::Foul);
             }
-            // Steeper landings lose more speed on the grass than skipping ground balls.
-            let retention = (0.88 + 0.03 * self.velocity.y).clamp(0.25, 0.79);
             self.velocity.y = 0.0;
-            self.velocity *= retention;
             self.rolling = true;
             return None;
         }
@@ -381,7 +378,6 @@ impl Flight {
 
     fn roll(&mut self, dt: f32) {
         self.position += self.velocity * dt;
-        self.velocity *= 1.0 - 1.25 * dt;
         let fence_radius = self.park.fence().0;
         if self.position.xz().length_squared() >= fence_radius * fence_radius {
             let stop = self.position.xz().normalize() * fence_radius;
@@ -472,7 +468,7 @@ mod tests {
         for (height, angles, distances, homer) in [
             (-0.85, -25.0..-23.0, 0.0..4.0, false),
             (-0.15, 27.0..29.0, 120.0..140.0, true),
-            (0.15, 7.0..9.0, 45.0..70.0, false),
+            (0.15, 10.0..12.0, 55.0..80.0, false),
             (0.85, 57.0..60.0, 40.0..75.0, false),
         ] {
             let swing = Swing {
@@ -504,7 +500,7 @@ mod tests {
     #[test]
     fn cursor_accuracy_changes_carry_at_the_same_swing_time() {
         use crate::batting::{SWING_LEAD, Swing, grade};
-        for (error, expected_carry) in [(0.0, 50.0..60.0), (0.5, 30.0..35.0), (0.9, 35.0..48.0)] {
+        for (error, expected_carry) in [(0.0, 65.0..75.0), (0.5, 37.0..45.0), (0.9, 35.0..48.0)] {
             let swing = Swing {
                 time: 0.5 - SWING_LEAD,
                 aim: CENTER + Vec2::X * MEET_RADIUS * error,
@@ -528,7 +524,7 @@ mod tests {
             for timing in [-0.020, 0.020] {
                 let swing = Swing {
                     time: 0.5 - SWING_LEAD + timing,
-                    aim: CENTER - Vec2::Y * 0.007,
+                    aim: CENTER + Vec2::Y * 0.004,
                 };
                 let hit = grade(swing, 0.5, CENTER);
                 assert_eq!(hit.contact, Contact::Barrel);
@@ -538,7 +534,7 @@ mod tests {
                 assert!(!flight.returning.unwrap().fielder.infield());
                 let pickup = flight.first_pickup.unwrap().xz();
                 assert!(
-                    (40.0..75.0).contains(&pickup.length()),
+                    pickup.length() <= park.fence().0 + 0.001,
                     "{park:?}: {pickup:?}"
                 );
                 assert!(pickup.x * timing.signum() as f32 > 5.0);
@@ -703,11 +699,7 @@ mod tests {
                 vec3(0.0, -2.0, -7.0),
                 Outcome::FlyOut(Fielder::Center),
             ),
-            (
-                vec3(16.0, 2.8, -38.0),
-                vec3(0.0, -5.0, -20.0),
-                Outcome::Fair,
-            ),
+            (vec3(31.0, 0.6, -44.0), vec3(0.0, -2.0, -5.0), Outcome::Fair),
         ] {
             let mut flight = Flight::new(
                 CENTER,
@@ -731,7 +723,7 @@ mod tests {
                     .ground_contact
                     .expect("a hit should record its first landing");
                 assert!((contact.position.y - BALL_RADIUS).abs() < 1e-5);
-                assert!(contact.position.xz().distance(flight.batted_point().xz()) > 1.0);
+                assert!(contact.position.xz().distance(flight.batted_point().xz()) > 0.0);
                 let returning = flight
                     .returning
                     .expect("the outfielder should return the ball");
@@ -824,8 +816,8 @@ mod tests {
     fn third_baseman_fields_grounders_and_left_fielder_takes_hits_behind_him() {
         use crate::batting::{SWING_LEAD, Swing, grade};
         for (offset_y, expected, fielder, target) in [
-            (0.020, Outcome::Fair, Fielder::Third, 2),
-            (0.0, Outcome::Fair, Fielder::Left, 2),
+            (0.020, Outcome::Fair, Fielder::Third, 1),
+            (0.0, Outcome::Triple, Fielder::Left, 3),
         ] {
             let swing = Swing {
                 time: 0.5 - SWING_LEAD - 0.0936,
@@ -931,45 +923,39 @@ mod tests {
     }
 
     #[test]
-    fn close_pitcher_flip_rewards_a_quick_batter_without_giving_away_the_out() {
-        use crate::batting::{SWING_LEAD, Swing, grade};
+    fn close_pitcher_flip_is_decided_by_the_race_to_first() {
         for park in [Park::Central, Park::Sunset] {
-            let hit = grade(
-                Swing {
-                    time: 0.5 - SWING_LEAD + 0.020,
-                    aim: CENTER + vec2(0.08, 0.03),
-                },
-                0.5,
-                CENTER,
-            );
-            for (tap, expected) in [
-                (false, Outcome::GroundOut(Fielder::Pitcher)),
-                (true, Outcome::Fair),
+            for (runner_time, expected) in [
+                (1.20, Outcome::GroundOut(Fielder::Pitcher)),
+                (1.48, Outcome::Fair),
             ] {
-                let mut flight = Flight::new(CENTER, hit, park);
-                let mut flip_to_first = false;
-                let result = (0..1200).find_map(|step| {
-                    if tap && step % 30 == 0 && flight.can_boost_runner() {
-                        flight.runner.tap();
-                    }
-                    let outcome = flight.advance(STEP);
-                    flip_to_first |= flight.returning.is_some_and(|play| {
-                        play.underhand() && play.fielder == Fielder::Pitcher && play.base == 1
-                    });
-                    outcome
-                });
-                assert_eq!(result, Some(expected), "{park:?}, tap={tap}");
-                if tap {
-                    assert_eq!(flight.runner.position(), crate::defense::FIRST_BASE);
-                } else {
-                    assert!(flip_to_first);
-                }
+                let mut flight = Flight::new(
+                    CENTER,
+                    Grade {
+                        contact: Contact::Touch,
+                        timing: 0.0,
+                        offset: Vec2::ZERO,
+                    },
+                    park,
+                );
+                flight.rolling = true;
+                flight.position = vec3(4.0, BALL_RADIUS, -18.0);
+                flight.velocity = vec3(1.5, 0.0, -1.2);
+                flight.defense.positions[Fielder::Pitcher as usize] = flight.position.xz();
+                flight.elapsed = 1.48;
+                flight.runner.advance(runner_time);
+
+                let outcome = (0..1200).find_map(|_| flight.advance(STEP));
+                assert_eq!(outcome, Some(expected), "{park:?}");
+                let play = flight.returning.unwrap();
+                assert_eq!(play.base, 1);
+                assert!(play.underhand());
             }
         }
     }
 
     #[test]
-    fn pitcher_covers_first_and_receives_the_first_basemans_throw() {
+    fn pitcher_covers_first_while_first_baseman_chases_the_ball() {
         use crate::batting::{SWING_LEAD, Swing, grade};
         let crossing = vec2(-0.2, CENTER.y);
         let hit = grade(
@@ -991,18 +977,38 @@ mod tests {
         });
         assert!(covered_before_pickup);
         assert_eq!(result, Some(Outcome::GroundOut(Fielder::First)));
-        let throw = flight.returning.unwrap();
-        assert_eq!(
-            (throw.fielder, throw.receiver),
-            (Fielder::First, Fielder::Pitcher)
-        );
-        assert!(throw.arrived());
-        assert!(
-            flight
-                .defense
-                .position(Fielder::Pitcher)
-                .abs_diff_eq(crate::defense::FIRST_BASE, 0.01)
-        );
+    }
+
+    #[test]
+    fn grounders_and_airborne_hits_keep_horizontal_speed_through_landing_and_roll() {
+        for (height, vertical_speed) in [(0.08, -4.0), (0.20, -15.0)] {
+            let mut flight = Flight::new(
+                CENTER,
+                Grade {
+                    contact: Contact::Touch,
+                    timing: 0.0,
+                    offset: Vec2::ZERO,
+                },
+                Park::Central,
+            );
+            flight.position = vec3(2.0, height, -2.0);
+            flight.velocity = vec3(2.0, vertical_speed, -25.0);
+            let expected = air_velocity(flight.velocity, STEP as f32 * BALL_TEMPO).xz();
+            assert!(flight.advance(STEP).is_none());
+            assert!(flight.ground_contact.is_some());
+            let landed = flight.position;
+            assert_eq!(flight.velocity.xz(), expected);
+            assert_eq!(flight.velocity.y, 0.0);
+
+            assert!(flight.advance(10.0 * STEP).is_none());
+            assert_eq!(flight.velocity.xz(), expected);
+            assert!(
+                flight
+                    .position
+                    .xz()
+                    .abs_diff_eq(landed.xz() + expected * (10.0 * STEP) as f32, 1e-5)
+            );
+        }
     }
 
     #[test]

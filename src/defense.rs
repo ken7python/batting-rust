@@ -86,7 +86,8 @@ impl Defense {
             return;
         }
         let lead = if rolling {
-            0.22
+            // Keep the target within pickup range so the fielder cannot shadow the ball forever.
+            0.22_f32.min(0.75 / velocity.xz().length().max(0.01))
         } else {
             let height = (position.y - 1.25).max(0.0);
             ((velocity.y + (velocity.y * velocity.y + 19.62 * height).sqrt()) / 9.81)
