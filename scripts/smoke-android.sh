@@ -6,7 +6,14 @@ export PATH="$sdk/cmdline-tools/latest/bin:$sdk/emulator:$sdk/platform-tools:$PA
 
 name=batting-ci
 bundle_id=com.ken7python.batting.debug
-printf 'no\n' | avdmanager create avd --force --name "$name" --package 'system-images;android-35;google_apis;x86_64'
+# Both Android tools must resolve the same AVD metadata on the hosted runner.
+export ANDROID_USER_HOME="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/batting-android.XXXXXX")"
+export ANDROID_AVD_HOME="$ANDROID_USER_HOME/avd"
+mkdir -p "$ANDROID_AVD_HOME"
+printf 'no\n' | avdmanager create avd --force --name "$name" \
+    --path "$ANDROID_AVD_HOME/$name.avd" --package 'system-images;android-35;google_apis;x86_64'
+test -s "$ANDROID_AVD_HOME/$name.ini"
+emulator -list-avds | grep -Fx "$name"
 mkdir -p target/android
 emulator -avd "$name" -no-window -no-audio -no-snapshot -no-boot-anim -port 5554 \
     -gpu swiftshader -feature -Vulkan > target/android/emulator.log 2>&1 &
