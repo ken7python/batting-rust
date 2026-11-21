@@ -32,8 +32,7 @@ impl Outcome {
     pub fn label(self) -> &'static str {
         match self {
             Self::Homer => "ホームラン",
-            Self::HardFair => "強いヒット",
-            Self::Fair => "ヒット",
+            Self::HardFair | Self::Fair => "ヒット",
             Self::Double => "二塁打",
             Self::Triple => "三塁打",
             Self::FlyOut(_) => "フライアウト",
