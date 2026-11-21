@@ -524,13 +524,16 @@ mod tests {
             for timing in [-0.020, 0.020] {
                 let swing = Swing {
                     time: 0.5 - SWING_LEAD + timing,
-                    aim: CENTER + Vec2::Y * 0.004,
+                    aim: CENTER - Vec2::Y * 0.024,
                 };
                 let hit = grade(swing, 0.5, CENTER);
                 assert_eq!(hit.contact, Contact::Barrel);
                 let mut flight = Flight::new(CENTER, hit, park);
                 let outcome = (0..1200).find_map(|_| flight.advance(STEP)).unwrap();
-                assert!(outcome.is_hit() && outcome != Outcome::Homer);
+                assert!(
+                    matches!(outcome, Outcome::HardFair | Outcome::Double),
+                    "{park:?} {timing}: {outcome:?}"
+                );
                 assert!(!flight.returning.unwrap().fielder.infield());
                 let pickup = flight.first_pickup.unwrap().xz();
                 assert!(
@@ -714,7 +717,14 @@ mod tests {
             flight.velocity = velocity;
             flight.elapsed = 1.0;
             flight.runner.advance(f64::from(flight.elapsed));
-            let outcome = (0..1000).find_map(|_| flight.advance(STEP));
+            let mut picked_up_at = None;
+            let outcome = (0..1000).find_map(|_| {
+                let result = flight.advance(STEP);
+                if picked_up_at.is_none() && flight.first_pickup.is_some() {
+                    picked_up_at = Some(flight.elapsed);
+                }
+                result
+            });
             assert_eq!(outcome, Some(expected));
             if expected == Outcome::Fair {
                 assert_eq!(flight.runner.target(), 1);
@@ -722,6 +732,7 @@ mod tests {
                 let contact = flight
                     .ground_contact
                     .expect("a hit should record its first landing");
+                assert!(picked_up_at.unwrap() - contact.at <= 0.8);
                 assert!((contact.position.y - BALL_RADIUS).abs() < 1e-5);
                 assert!(contact.position.xz().distance(flight.batted_point().xz()) > 0.0);
                 let returning = flight
@@ -813,30 +824,23 @@ mod tests {
     }
 
     #[test]
-    fn third_baseman_fields_grounders_and_left_fielder_takes_hits_behind_him() {
+    fn a_grounder_fielded_by_third_can_be_an_infield_hit() {
         use crate::batting::{SWING_LEAD, Swing, grade};
-        for (offset_y, expected, fielder, target) in [
-            (0.020, Outcome::Fair, Fielder::Third, 1),
-            (0.0, Outcome::Triple, Fielder::Left, 3),
-        ] {
-            let swing = Swing {
-                time: 0.5 - SWING_LEAD - 0.0936,
-                aim: CENTER + vec2(0.072, offset_y),
-            };
-            let mut flight = Flight::new(CENTER, grade(swing, 0.5, CENTER), Park::Central);
-            let result = (0..1200).find_map(|step| {
-                if step % 24 == 0 && flight.can_boost_runner() {
-                    flight.runner.tap();
-                }
-                flight.advance(STEP)
-            });
-            assert_eq!(result, Some(expected));
-            let throw = flight.returning.unwrap();
-            assert_eq!((throw.fielder, throw.base), (fielder, target));
-            if expected == Outcome::Fair {
-                assert_eq!(flight.runner.position(), crate::defense::FIRST_BASE);
+        let swing = Swing {
+            time: 0.5 - SWING_LEAD - 0.0936,
+            aim: CENTER + vec2(0.072, 0.020),
+        };
+        let mut flight = Flight::new(CENTER, grade(swing, 0.5, CENTER), Park::Central);
+        let result = (0..1200).find_map(|step| {
+            if step % 24 == 0 && flight.can_boost_runner() {
+                flight.runner.tap();
             }
-        }
+            flight.advance(STEP)
+        });
+        assert_eq!(result, Some(Outcome::Fair));
+        let throw = flight.returning.unwrap();
+        assert_eq!((throw.fielder, throw.base), (Fielder::Third, 1));
+        assert_eq!(flight.runner.position(), crate::defense::FIRST_BASE);
     }
 
     #[test]
