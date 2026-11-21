@@ -85,6 +85,7 @@ impl Defense {
         if elapsed < 0.20 {
             return;
         }
+        let fly_ball = !rolling && position.y + velocity.y.max(0.0).powi(2) / 19.62 >= 5.5;
         let lead = if rolling {
             // Keep the target within pickup range so the fielder cannot shadow the ball forever.
             0.22_f32.min(0.75 / velocity.xz().length().max(0.01))
@@ -108,13 +109,17 @@ impl Defense {
                     .total_cmp(&self.position(b).distance_squared(target))
             })
             .expect("there is always an outfielder");
-        if !rolling && !fielder.infield() && elapsed < 0.31 {
+        // React early to high flies aimed near a defensive lane. Flies into the
+        // alleys still require lateral coverage from the shallow alignment.
+        let bearing = target.x.abs().atan2(-target.y);
+        let direct_fly = fly_ball && (bearing <= 0.19 || (0.45..=0.71).contains(&bearing));
+        if !rolling && !direct_fly && !fielder.infield() && elapsed < 0.31 {
             return;
         }
         let speed = match fielder {
             Fielder::Pitcher => PLAYER_SPEED,
             _ if fielder.infield() => 12.0,
-            // Tracking a fly toward the fence takes longer than charging a ball in front.
+            _ if direct_fly => 12.5,
             _ if !rolling && target.length() > self.position(fielder).length() + 1.0 => 8.0,
             _ if rolling => 14.0,
             _ => 11.5,
