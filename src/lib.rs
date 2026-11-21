@@ -577,8 +577,7 @@ fn draw_play(
                 let p = project(camera, predicted);
                 let radius = meet_cursor_radius(camera, play.aim.point) * 0.5;
                 let color = if predicted.z < 0.0 { GOLD } else { SKYBLUE };
-                draw_circle(p.x, p.y, radius, BLACK);
-                draw_circle(p.x, p.y, radius * 0.84, color);
+                draw_preview_ball(p, radius, color, play.pitch.preview_rotation(play.time));
             }
         }
         Phase::Result(card) if card.fielding.is_none() => {
@@ -593,6 +592,61 @@ fn draw_play(
             }
         }
         Phase::Flight(_) | Phase::Result(_) => {}
+    }
+}
+
+fn draw_preview_ball(center: Vec2, radius: f32, rim: Color, rotation: Quat) {
+    draw_circle(center.x, center.y, radius, BLACK);
+    draw_circle(center.x, center.y, radius * 0.89, rim);
+    draw_circle(
+        center.x,
+        center.y,
+        radius * 0.75,
+        Color::from_rgba(255, 249, 235, 255),
+    );
+
+    // Project the seam from the front hemisphere. The far side is hidden by the leather.
+    let seam = |step: i32| {
+        let angle = step as f32 * std::f32::consts::TAU / 48.0;
+        let (sin, cos) = angle.sin_cos();
+        rotation * vec3(cos, sin, 0.75 * (2.0 * angle).sin()).normalize()
+    };
+    let project = |point: Vec3| center + vec2(point.x, -point.y) * radius * 0.73;
+    let thread = Color::from_rgba(166, 38, 45, 255);
+    for step in 0..48 {
+        let a = seam(step);
+        let b = seam(step + 1);
+        if a.z < 0.0 && b.z < 0.0 {
+            continue;
+        }
+        let clip = |front: Vec3, back: Vec3| {
+            if back.z < 0.0 {
+                front.lerp(back, front.z / (front.z - back.z))
+            } else {
+                back
+            }
+        };
+        let from = project(clip(b, a));
+        let to = project(clip(a, b));
+        draw_line(
+            from.x,
+            from.y,
+            to.x,
+            to.y,
+            (radius * 0.12).max(0.75),
+            thread,
+        );
+        if step % 4 == 0 && a.z > 0.2 {
+            let across = (to - from).perp().normalize_or_zero() * radius * 0.12;
+            draw_line(
+                from.x - across.x,
+                from.y - across.y,
+                from.x + across.x,
+                from.y + across.y,
+                0.75,
+                thread,
+            );
+        }
     }
 }
 

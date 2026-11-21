@@ -339,6 +339,22 @@ impl Pitch {
         f64::from(self.delivery.release().z.abs()) / self.duration * 3.6
     }
 
+    pub fn preview_rotation(self, elapsed: f64) -> Quat {
+        let mut direction = self.kind.preview_direction().normalize_or_zero();
+        direction.x *= self.delivery.hand.sign();
+        let (axis, turns_per_second) = match self.kind {
+            PitchKind::Fastball => (Vec3::NEG_X, 3.0),
+            PitchKind::Knuckleball => (Vec3::Y, 0.12),
+            PitchKind::Slider => (vec3(-direction.y, direction.x, direction.x * 0.65), 2.7),
+            PitchKind::Forkball | PitchKind::Splitter => (Vec3::X, 1.2),
+            _ => (vec3(-direction.y, direction.x, 0.0), 2.3),
+        };
+        let angle = elapsed as f32 * turns_per_second * std::f32::consts::TAU;
+        Quat::from_axis_angle(axis.normalize(), angle)
+            * Quat::from_rotation_y(0.65)
+            * Quat::from_rotation_x(0.45)
+    }
+
     pub fn preview_point(self, elapsed: f64) -> Vec3 {
         let end = self.bounce_time.unwrap_or(self.duration);
         let finish = self.position(end);
@@ -628,6 +644,34 @@ mod tests {
         assert!(early.distance(later) > 0.05);
         assert_eq!(pitch.preview_point(pitch.end_time()), bounce);
         assert!((bounce.y - BALL_RADIUS).abs() < 1e-5 && bounce.z < 0.0);
+    }
+
+    #[test]
+    fn preview_spin_follows_break_and_mirrors_the_pitchers_hand() {
+        for hand in [ThrowingHand::Right, ThrowingHand::Left] {
+            for (kind, expected) in [
+                (PitchKind::Fastball, Vec2::Y),
+                (PitchKind::Forkball, Vec2::NEG_Y),
+                (PitchKind::Slider, vec2(-hand.sign(), 0.0)),
+                (PitchKind::Sinker, vec2(hand.sign(), -1.0)),
+            ] {
+                let pitch = Pitch::new(
+                    kind,
+                    Delivery {
+                        hand,
+                        ..Delivery::default()
+                    },
+                    CENTER,
+                    PitchSpeed::Normal,
+                    0.5,
+                    BreakSize::Normal,
+                );
+                let rotation =
+                    pitch.preview_rotation(0.001) * pitch.preview_rotation(0.0).inverse();
+                let motion = (rotation * Vec3::Z).truncate().normalize();
+                assert!(motion.dot(expected.normalize()) > 0.99, "{kind:?} {hand:?}");
+            }
+        }
     }
 
     #[test]
