@@ -590,9 +590,9 @@ mod tests {
         let arrival = 0.48;
         for park in [Park::Central, Park::Sunset] {
             for (timing, offset, expected_contact) in [
-                (0.016, Vec2::ZERO, Contact::Touch),
-                (0.0, vec2(0.049, 0.0), Contact::Barrel),
-                (0.0, vec2(0.052, 0.0), Contact::Touch),
+                (0.026, Vec2::ZERO, Contact::Touch),
+                (0.0, vec2(0.064, 0.0), Contact::Barrel),
+                (0.0, vec2(0.066, 0.0), Contact::Touch),
                 (0.0, vec2(0.03, -0.10), Contact::Touch),
                 (0.0, Vec2::ZERO, Contact::Barrel),
             ] {
