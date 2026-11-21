@@ -9,7 +9,6 @@ pub const THIRD_BASE: Vec2 = vec2(-19.4, -19.4);
 
 pub const PLAYER_SPEED: f32 = 11.0;
 const INFIELDER_THROW_SPEED: f32 = 34.0;
-const OUTFIELDER_THROW_SPEED: f32 = 38.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fielder {
@@ -196,6 +195,7 @@ pub struct FieldReturn {
     pub target: Vec2,
     pub base: usize,
     release: Vec3,
+    underhand: bool,
     transfer: f32,
     travel: f32,
     elapsed: f32,
@@ -203,6 +203,16 @@ pub struct FieldReturn {
 
 impl FieldReturn {
     pub fn new(fielder: Fielder, pickup: Vec3, defense: &Defense, base: usize) -> Self {
+        Self::with_urgency(fielder, pickup, defense, base, true)
+    }
+
+    pub fn with_urgency(
+        fielder: Fielder,
+        pickup: Vec3,
+        defense: &Defense,
+        base: usize,
+        urgent: bool,
+    ) -> Self {
         let (receiver, target) = match base {
             1 => {
                 let first_distance = defense.position(Fielder::First).distance(FIRST_BASE);
@@ -223,12 +233,26 @@ impl FieldReturn {
         };
         let start = defense.position(fielder);
         let toward = (target - start).normalize_or_zero();
-        let release = on_field(start + toward * 0.30, 1.65);
+        let distance = start.distance(target);
+        // A pitcher who fields toward first can flip the ball from nearby.
+        let underhand =
+            fielder == Fielder::Pitcher && base == 1 && start.x >= 3.0 && distance <= 16.0;
+        let release_height = if underhand { 0.78 } else { 1.65 };
+        let release = on_field(start + toward * 0.30, release_height);
         let carrying = fielder == receiver;
-        let (throw_speed, exchange) = if fielder.infield() {
+        let (throw_speed, exchange) = if underhand {
+            (19.0, 0.23)
+        } else if fielder.infield() {
             (INFIELDER_THROW_SPEED, 0.28)
         } else {
-            (OUTFIELDER_THROW_SPEED, 0.60)
+            // Distance calls for more arm even on a routine return. A contested base
+            // calls for a quicker transfer and extra velocity.
+            let distance_factor = ((distance - 12.0) / 26.0).clamp(0.0, 1.0);
+            if urgent {
+                (32.0 + 10.0 * distance_factor, 0.38)
+            } else {
+                (18.0 + 14.0 * distance_factor, 0.60)
+            }
         };
         let travel = if carrying {
             start.distance(target) / PLAYER_SPEED
@@ -248,6 +272,7 @@ impl FieldReturn {
             target,
             base,
             release,
+            underhand,
             transfer,
             travel,
             elapsed: 0.0,
@@ -286,6 +311,10 @@ impl FieldReturn {
         }
     }
 
+    pub fn underhand(&self) -> bool {
+        self.underhand
+    }
+
     pub fn transfer_progress(&self) -> f32 {
         (self.elapsed / self.transfer).min(1.0)
     }
@@ -309,7 +338,12 @@ impl FieldReturn {
             return on_field(defense.position(self.fielder), 1.1);
         }
         let fraction = ((self.elapsed - self.transfer) / self.travel).clamp(0.0, 1.0);
-        let arc = (self.release.xz().distance(self.target) * 0.05).clamp(0.3, 2.8);
+        let distance = self.release.xz().distance(self.target);
+        let arc = if self.underhand {
+            (distance * 0.035).clamp(0.35, 0.75)
+        } else {
+            (distance * 0.05).clamp(0.3, 2.8)
+        };
         self.release.lerp(on_field(self.target, 1.1), fraction)
             + Vec3::Y * (4.0 * fraction * (1.0 - fraction) * arc)
     }
@@ -317,4 +351,36 @@ impl FieldReturn {
 
 fn on_field(point: Vec2, height: f32) -> Vec3 {
     vec3(point.x, height, point.y)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn outfield_return_speed_increases_with_distance_and_urgency() {
+        let mut defense = Defense::new(Park::Central);
+        defense.positions[Fielder::Shortstop as usize] = SECOND_BASE;
+        let mut speeds = Vec::new();
+
+        for distance in [12.0, 42.0] {
+            let position = SECOND_BASE - Vec2::Y * distance;
+            defense.positions[Fielder::Center as usize] = position;
+            let pickup = on_field(position, 0.0);
+            let relaxed = FieldReturn::with_urgency(Fielder::Center, pickup, &defense, 2, false);
+            let urgent = FieldReturn::with_urgency(Fielder::Center, pickup, &defense, 2, true);
+            let travel_distance = relaxed.release.xz().distance(SECOND_BASE);
+            let relaxed_speed = travel_distance / relaxed.travel;
+            let urgent_speed = travel_distance / urgent.travel;
+
+            assert!(urgent.remaining() < relaxed.remaining());
+            assert!(urgent_speed > relaxed_speed);
+            speeds.push((relaxed_speed, urgent_speed));
+        }
+
+        assert!(speeds[0].0 < 20.0);
+        assert!(speeds[0].0 < speeds[1].0);
+        assert!(speeds[0].1 < speeds[1].1);
+        assert!(speeds[1].1 > 38.0);
+    }
 }

@@ -144,10 +144,12 @@ mod tests {
         runner.tap();
         runner.tap();
         runner.advance(0.20);
-        assert!((runner.progress - 0.224).abs() < 1e-9);
+        assert!((runner.progress - 0.20 * (1.0 + BOOST_EXTRA_SPEED)).abs() < 1e-9);
         runner.tap();
         runner.advance(0.50);
-        assert!((runner.progress - 0.760).abs() < 1e-9);
+        assert!(
+            (runner.progress - (0.70 + (0.20 + BOOST_DURATION) * BOOST_EXTRA_SPEED)).abs() < 1e-9
+        );
         assert!(!runner.boosted());
     }
 }

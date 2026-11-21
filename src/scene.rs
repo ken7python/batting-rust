@@ -414,15 +414,23 @@ pub fn fielders(
             0.83
         };
         let mut glove = feet + vec3(0.35, glove_height, 0.08);
-        if let Some(play) = returning.filter(|play| carrier && !play.carrying()) {
+        let throwing = returning.filter(|play| carrier && !play.carrying());
+        if let Some(play) = throwing {
             let toward = (play.target - point).normalize_or_zero();
             let progress = play.transfer_progress();
             let reach = -0.28 + progress * 0.58;
-            glove = feet + vec3(toward.x * reach, 0.65 + progress, toward.y * reach);
+            let height = if play.underhand() {
+                0.58 + 0.20 * progress
+            } else {
+                0.65 + progress
+            };
+            glove = feet + vec3(toward.x * reach, height, toward.y * reach);
         }
         if let Some(ball) = catching {
-            let shoulder = feet + vec3(0.20, 1.35, 0.0);
             glove = ball;
+        }
+        if catching.is_some() || throwing.is_some() {
+            let shoulder = feet + vec3(0.20, 1.35, 0.0);
             for joint in 1..=5 {
                 draw_cube(
                     shoulder.lerp(glove, joint as f32 / 6.0),
