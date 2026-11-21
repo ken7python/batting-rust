@@ -244,6 +244,35 @@ mod tests {
     }
 
     #[test]
+    fn early_and_late_swings_can_hit_to_opposite_fields() {
+        for park in [Park::Central, Park::Sunset] {
+            for timing in [-0.075, 0.075] {
+                let mut play = fastball();
+                play.park = park;
+                play.aim.press();
+                play.aim.drag(vec2(0.0, -0.024));
+                play.advance(play.pitch.duration - SWING_LEAD + timing - play.time);
+                assert!(play.can_swing());
+                assert!(play.aim.release(play.time));
+                for _ in 0..1200 {
+                    play.advance(1.0 / 60.0);
+                    if let Phase::Result(_) = play.phase {
+                        break;
+                    }
+                }
+                let Phase::Result(result) = &play.phase else {
+                    panic!("unfinished play")
+                };
+                let hit = result.grade.unwrap();
+                assert!(!crate::batting::on_time(hit.timing));
+                assert_eq!(hit.contact, Contact::Touch);
+                assert!(result.outcome.is_hit() && result.outcome != Outcome::Homer);
+                assert_eq!(result.landing.unwrap().x.signum(), timing.signum() as f32);
+            }
+        }
+    }
+
+    #[test]
     fn a_ball_just_outside_the_zone_cannot_start_baserunning() {
         let mut play = fastball();
         play.pitch = Pitch::new(

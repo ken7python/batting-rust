@@ -1,6 +1,6 @@
 use macroquad::prelude::*;
 
-use crate::batting::{BARREL_RADIUS, BARREL_TIMING, Grade};
+use crate::batting::{BARREL_RADIUS, Grade, on_time};
 use crate::display::DisplayProfile;
 use crate::flight::Outcome;
 use crate::park::Park;
@@ -984,12 +984,12 @@ impl<'a> Ui<'a> {
 }
 
 fn feedback_label(grade: Grade) -> String {
-    let timing = if grade.timing < -BARREL_TIMING {
-        "早い"
-    } else if grade.timing > BARREL_TIMING {
-        "遅い"
-    } else {
+    let timing = if on_time(grade.timing) {
         "適正"
+    } else if grade.timing < 0.0 {
+        "早い"
+    } else {
+        "遅い"
     };
     let offset = grade.offset / BARREL_RADIUS;
     let position = if offset.length() <= 1.0 {
@@ -1011,6 +1011,28 @@ fn feedback_label(grade: Grade) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn timing_feedback_agrees_with_contact_at_both_edges_of_each_window() {
+        use crate::batting::{CENTER, Contact, SWING_LEAD, Swing, grade};
+        for sign in [-1.0, 1.0] {
+            let off_time = if sign < 0.0 { "早い" } else { "遅い" };
+            for (milliseconds, contact, label) in [
+                (50, Contact::Barrel, "適正"),
+                (51, Contact::Touch, off_time),
+                (108, Contact::Touch, off_time),
+                (109, Contact::Miss, off_time),
+            ] {
+                let swing = Swing {
+                    time: 0.5 - SWING_LEAD + sign * f64::from(milliseconds) / 1000.0,
+                    aim: CENTER,
+                };
+                let hit = grade(swing, 0.5, CENTER);
+                assert_eq!(hit.contact, contact);
+                assert!(feedback_label(hit).contains(label));
+            }
+        }
+    }
 
     #[test]
     fn preview_modes_start_at_their_own_release_thresholds() {
