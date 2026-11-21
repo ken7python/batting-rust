@@ -406,8 +406,14 @@ async fn game() {
 fn draw_idle(camera: &Camera3D, delivery: Delivery, park: Park, stands: &Stands) {
     set_camera(camera);
     field(park, stands);
-    fielders(&Defense::new(park), 0.0, None, None, 0.0);
-    pitcher(-batting::WINDUP, delivery);
+    fielders(
+        &Defense::new(park),
+        0.0,
+        None,
+        None,
+        0.0,
+        Some((-batting::WINDUP, delivery)),
+    );
     set_default_camera();
 }
 
@@ -455,6 +461,7 @@ fn draw_play(
                 flight.returning.as_ref(),
                 catch,
                 0.0,
+                None,
             );
             if flight.confident {
                 confident_runner(&flight.runner, flight.elapsed);
@@ -520,6 +527,7 @@ fn draw_play(
                 view.returning.as_ref(),
                 catch,
                 play.result_time as f32,
+                None,
             );
             if !matches!(outcome, Outcome::Foul | Outcome::Homer) {
                 batter_runner(&view.runner, view.elapsed, false);
@@ -535,8 +543,14 @@ fn draw_play(
         _ => {
             set_camera(camera);
             field(play.park, stands);
-            fielders(&Defense::new(play.park), 0.0, None, None, 0.0);
-            pitcher(play.time, play.pitch.delivery);
+            fielders(
+                &Defense::new(play.park),
+                0.0,
+                None,
+                None,
+                0.0,
+                Some((play.time, play.pitch.delivery)),
+            );
             bat(play.time, &play.aim);
             if matches!(play.phase, Phase::Pitch) && play.time >= 0.0 {
                 ball(play.pitch.position(play.time));

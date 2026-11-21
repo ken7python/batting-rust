@@ -832,21 +832,11 @@ mod tests {
     }
 
     #[test]
-    fn shallow_grounders_cannot_buy_extra_bases_but_gap_hits_can_reach_second() {
+    fn a_comebacker_is_a_pitcher_out_but_a_gap_hit_can_reach_second() {
         for park in [Park::Central, Park::Sunset] {
-            for (timing, offset, base, expected) in [
-                (
-                    0.0,
-                    vec2(0.0, -0.092),
-                    crate::defense::FIRST_BASE,
-                    Outcome::Fair,
-                ),
-                (
-                    -0.02,
-                    Vec2::ZERO,
-                    crate::defense::SECOND_BASE,
-                    Outcome::Double,
-                ),
+            for (timing, offset, expected) in [
+                (0.0, vec2(0.0, -0.092), Outcome::GroundOut(Fielder::Pitcher)),
+                (-0.02, Vec2::ZERO, Outcome::Double),
             ] {
                 let hit = Grade {
                     contact: Contact::Touch,
@@ -862,10 +852,51 @@ mod tests {
                         flight.advance(STEP)
                     });
                     assert_eq!(result, Some(expected), "{park:?}, tap={tap}");
-                    assert_eq!(flight.runner.position(), base);
+                    if expected == Outcome::Double {
+                        assert_eq!(flight.runner.position(), crate::defense::SECOND_BASE);
+                    } else {
+                        assert_eq!(flight.returning.unwrap().receiver, Fielder::First);
+                        assert_eq!(flight.runner.reached(), 0);
+                    }
                 }
             }
         }
+    }
+
+    #[test]
+    fn pitcher_covers_first_and_receives_the_first_basemans_throw() {
+        use crate::batting::{SWING_LEAD, Swing, grade};
+        let hit = grade(
+            Swing {
+                time: 0.5 - SWING_LEAD + 0.0576,
+                aim: CENTER + vec2(-0.043, -0.023),
+            },
+            0.5,
+            CENTER,
+        );
+        let mut flight = Flight::new(CENTER, hit, Park::Central);
+        let mut covered_before_pickup = false;
+        let result = (0..1200).find_map(|_| {
+            let result = flight.advance(STEP);
+            if flight.returning.is_none() && flight.defense.chasing == Some(Fielder::First) {
+                covered_before_pickup |= flight.defense.position(Fielder::Pitcher).x > 0.5;
+            }
+            result
+        });
+        assert!(covered_before_pickup);
+        assert_eq!(result, Some(Outcome::GroundOut(Fielder::First)));
+        let throw = flight.returning.unwrap();
+        assert_eq!(
+            (throw.fielder, throw.receiver),
+            (Fielder::First, Fielder::Pitcher)
+        );
+        assert!(throw.arrived());
+        assert!(
+            flight
+                .defense
+                .position(Fielder::Pitcher)
+                .abs_diff_eq(crate::defense::FIRST_BASE, 0.01)
+        );
     }
 
     #[test]

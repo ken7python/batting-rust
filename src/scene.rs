@@ -10,7 +10,7 @@ use crate::pitch::{Delivery, PitchForm};
 use crate::runner::{Runner, SLIDE_SECONDS};
 use crate::stands::Stands;
 
-pub const MOUND: Vec3 = vec3(0.0, 0.0, -17.0);
+use crate::defense::MOUND;
 const GRASS: Color = Color::from_rgba(49, 104, 74, 255);
 const DIRT: Color = Color::from_rgba(174, 113, 78, 255);
 const FENCE: Color = Color::from_rgba(23, 67, 59, 255);
@@ -353,10 +353,25 @@ pub fn fielders(
     returning: Option<&FieldReturn>,
     catch: Option<(Fielder, Vec3)>,
     result_age: f32,
+    pitching: Option<(f64, Delivery)>,
 ) {
-    let jersey = Color::from_rgba(52, 113, 201, 255);
     let skin = Color::from_rgba(216, 165, 118, 255);
     for (role, point) in Fielder::ALL.into_iter().zip(defense.positions) {
+        if role == Fielder::Pitcher
+            && let Some((time, delivery)) = pitching
+        {
+            pitcher(time, delivery);
+            continue;
+        }
+        let (jersey, cap) = if role == Fielder::Pitcher {
+            (
+                Color::from_rgba(245, 239, 220, 255),
+                Color::from_rgba(171, 57, 46, 255),
+            )
+        } else {
+            let blue = Color::from_rgba(52, 113, 201, 255);
+            (blue, blue)
+        };
         let catching = catch
             .filter(|(fielder, _)| *fielder == role)
             .map(|(_, ball)| ball);
@@ -369,7 +384,10 @@ pub fn fielders(
         let chasing = defense.chasing == Some(role);
         let carrier = returning.is_some_and(|play| play.fielder == role);
         let receiving = returning.is_some_and(|play| play.receiver == role && !play.carrying());
-        let running = returning.map_or(chasing, |play| role == play.receiver);
+        let covering_first = role == Fielder::Pitcher
+            && defense.chasing == Some(Fielder::First)
+            && point.distance_squared(crate::defense::FIRST_BASE) > 0.01;
+        let running = returning.map_or(chasing || covering_first, |play| role == play.receiver);
         let step = if running && catching.is_none() {
             (time * 23.0).sin() * 0.18
         } else {
@@ -386,7 +404,7 @@ pub fn fielders(
             feet + vec3(0.0, 1.73, 0.04),
             vec3(0.34, 0.10, 0.32),
             None,
-            jersey,
+            cap,
         );
         for side in [-1.0, 1.0] {
             draw_cube(

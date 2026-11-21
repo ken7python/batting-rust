@@ -2,6 +2,7 @@ use macroquad::prelude::*;
 
 use crate::park::Park;
 
+pub const MOUND: Vec3 = vec3(0.0, 0.0, -17.0);
 pub const FIRST_BASE: Vec2 = vec2(19.4, -19.4);
 pub const SECOND_BASE: Vec2 = vec2(0.0, -38.8);
 pub const THIRD_BASE: Vec2 = vec2(-19.4, -19.4);
@@ -19,10 +20,11 @@ pub enum Fielder {
     Left,
     Center,
     Right,
+    Pitcher,
 }
 
 impl Fielder {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::First,
         Self::Second,
         Self::Shortstop,
@@ -30,10 +32,12 @@ impl Fielder {
         Self::Left,
         Self::Center,
         Self::Right,
+        Self::Pitcher,
     ];
 
     pub fn label(self) -> &'static str {
         match self {
+            Self::Pitcher => "投手",
             Self::First => "一塁手",
             Self::Second => "二塁手",
             Self::Shortstop => "遊撃手",
@@ -47,14 +51,14 @@ impl Fielder {
     pub fn infield(self) -> bool {
         matches!(
             self,
-            Self::First | Self::Second | Self::Shortstop | Self::Third
+            Self::Pitcher | Self::First | Self::Second | Self::Shortstop | Self::Third
         )
     }
 }
 
 #[derive(Clone, Copy)]
 pub struct Defense {
-    pub positions: [Vec2; 7],
+    pub positions: [Vec2; Fielder::ALL.len()],
     pub chasing: Option<Fielder>,
     pub diving: Option<Fielder>,
 }
@@ -71,6 +75,7 @@ impl Defense {
                 vec2(-31.0, -49.0) * outfield_scale,
                 vec2(0.0, -62.0) * outfield_scale,
                 vec2(31.0, -49.0) * outfield_scale,
+                MOUND.xz(),
             ],
             chasing: None,
             diving: None,
@@ -106,8 +111,13 @@ impl Defense {
             Fielder::Second => Fielder::Shortstop,
             _ => self.second_base_cover(),
         };
+        let first = if fielder == Fielder::First {
+            Fielder::Pitcher
+        } else {
+            Fielder::First
+        };
         for (cover, bag) in [
-            (Fielder::First, FIRST_BASE),
+            (first, FIRST_BASE),
             (second, SECOND_BASE),
             (Fielder::Third, THIRD_BASE),
         ] {
@@ -193,7 +203,19 @@ pub struct FieldReturn {
 impl FieldReturn {
     pub fn new(fielder: Fielder, pickup: Vec3, defense: &Defense, base: usize) -> Self {
         let (receiver, target) = match base {
-            1 => (Fielder::First, FIRST_BASE),
+            1 => {
+                let first_distance = defense.position(Fielder::First).distance(FIRST_BASE);
+                let pitcher_distance = defense.position(Fielder::Pitcher).distance(FIRST_BASE);
+                let receiver = if fielder == Fielder::First
+                    && first_distance > 2.0
+                    && pitcher_distance < first_distance
+                {
+                    Fielder::Pitcher
+                } else {
+                    Fielder::First
+                };
+                (receiver, FIRST_BASE)
+            }
             2 => (defense.second_base_cover(), SECOND_BASE),
             3 => (Fielder::Third, THIRD_BASE),
             _ => unreachable!("there are three playable bases"),
