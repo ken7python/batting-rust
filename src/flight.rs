@@ -11,6 +11,7 @@ pub const STEP: f64 = 1.0 / 120.0;
 // Speed up ball travel without increasing its range or speeding up runners.
 const BALL_TEMPO: f32 = 1.50;
 const SAFE_ADVANCE_MARGIN: f64 = 0.25;
+const SHALLOW_HIT_ADVANCE_MARGIN: f64 = 1.40;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Outcome {
@@ -213,7 +214,17 @@ impl Flight {
             let ball_time = self.time_to_defend_next_base();
             let mut advancing = self.runner;
             advancing.start_next_leg();
-            if ball_time >= advancing.remaining_time() + SAFE_ADVANCE_MARGIN {
+            // Be conservative about stretching a ball that reached the ground in the infield.
+            let margin = if advancing.target() == 2
+                && self.ground_contact.is_some_and(|contact| {
+                    contact.position.xz().length_squared()
+                        < crate::defense::SECOND_BASE.length_squared()
+                }) {
+                SHALLOW_HIT_ADVANCE_MARGIN
+            } else {
+                SAFE_ADVANCE_MARGIN
+            };
+            if ball_time >= advancing.remaining_time() + margin {
                 self.runner = advancing;
             }
         }
@@ -395,7 +406,10 @@ impl Flight {
                     1
                 },
             );
-            let urgent = self.runner.target() == base && self.runner.moving();
+            let urgent = self.runner.moving()
+                && (self.runner.target() == base
+                    || (!fielder.infield()
+                        && self.position.xz().length() < self.park.fence().0 * 0.66));
             let mut throw =
                 FieldReturn::with_urgency(fielder, self.position, &self.defense, base, urgent);
             // Concede the single if a throw across the diamond would be clearly late.
@@ -695,6 +709,37 @@ mod tests {
     }
 
     #[test]
+    fn an_infield_gap_grounder_stays_a_single_and_a_deep_fly_can_be_a_double() {
+        use crate::batting::{SWING_LEAD, Swing, grade};
+        for park in [Park::Central, Park::Sunset] {
+            for (timing, aim_height, expected) in [
+                (-0.065, 0.04, Outcome::Fair),
+                (-0.080, -0.06, Outcome::Double),
+            ] {
+                let swing = Swing {
+                    time: 0.5 - SWING_LEAD + timing,
+                    aim: CENTER + Vec2::Y * aim_height,
+                };
+                let mut flight = Flight::new(CENTER, grade(swing, 0.5, CENTER), park);
+                assert_eq!(
+                    (0..1200).find_map(|_| flight.advance(STEP)),
+                    Some(expected),
+                    "{park:?}"
+                );
+                let landing = flight.ground_contact.unwrap().position.xz().length();
+                if expected == Outcome::Fair {
+                    assert!(landing < 35.0);
+                    assert_eq!(flight.runner.position(), crate::defense::FIRST_BASE);
+                } else {
+                    assert!(landing >= 70.0);
+                    assert_eq!(flight.runner.position(), crate::defense::SECOND_BASE);
+                }
+                assert!(!flight.returning.unwrap().fielder.infield());
+            }
+        }
+    }
+
+    #[test]
     fn a_caught_fly_is_out_and_a_shallow_outfield_hit_stops_at_first() {
         for (position, velocity, expected) in [
             (
@@ -702,7 +747,7 @@ mod tests {
                 vec3(0.0, -2.0, -7.0),
                 Outcome::FlyOut(Fielder::Center),
             ),
-            (vec3(31.0, 0.6, -44.0), vec3(0.0, -2.0, -5.0), Outcome::Fair),
+            (vec3(29.0, 0.6, -42.0), vec3(0.0, -2.0, -5.0), Outcome::Fair),
         ] {
             let mut flight = Flight::new(
                 CENTER,
@@ -766,7 +811,8 @@ mod tests {
             let mut flight = Flight::new(CENTER, hit, Park::Central);
             flight.try_dive = allow_dive;
             flight.elapsed = 1.0;
-            flight.position = vec3(gap, height, -62.0);
+            let center = flight.defense.position(Fielder::Center);
+            flight.position = vec3(center.x + gap, height, center.y);
             flight.velocity = vec3(0.0, -4.0, 0.0);
             let outcome = flight.advance(STEP);
             assert_eq!(outcome, caught.then_some(Outcome::FlyOut(Fielder::Center)));
