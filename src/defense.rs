@@ -6,10 +6,9 @@ pub const FIRST_BASE: Vec2 = vec2(19.4, -19.4);
 pub const SECOND_BASE: Vec2 = vec2(0.0, -38.8);
 pub const THIRD_BASE: Vec2 = vec2(-19.4, -19.4);
 
-const INFIELDER_SPEED: f32 = 6.0;
-const OUTFIELDER_SPEED: f32 = 6.25;
-const INFIELDER_THROW_SPEED: f32 = 27.0;
-const OUTFIELDER_THROW_SPEED: f32 = 30.0;
+pub const PLAYER_SPEED: f32 = 8.5;
+const INFIELDER_THROW_SPEED: f32 = 24.0;
+const OUTFIELDER_THROW_SPEED: f32 = 17.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fielder {
@@ -78,15 +77,7 @@ impl Defense {
         }
     }
 
-    pub fn chase(
-        &mut self,
-        position: Vec3,
-        velocity: Vec3,
-        elapsed: f32,
-        dt: f32,
-        rolling: bool,
-        runner_target: usize,
-    ) {
+    pub fn chase(&mut self, position: Vec3, velocity: Vec3, elapsed: f32, dt: f32, rolling: bool) {
         if elapsed < 0.27 {
             return;
         }
@@ -104,22 +95,26 @@ impl Defense {
         if !fielder.infield() && elapsed < 0.34 {
             return;
         }
-        let speed = if fielder.infield() {
-            INFIELDER_SPEED
-        } else {
-            OUTFIELDER_SPEED
+        self.move_toward(fielder, target, PLAYER_SPEED * dt);
+        self.cover_bases(fielder, None, dt);
+        self.chasing = Some(fielder);
+    }
+
+    fn cover_bases(&mut self, fielder: Fielder, receiver: Option<Fielder>, dt: f32) {
+        let second = match fielder {
+            Fielder::Shortstop => Fielder::Second,
+            Fielder::Second => Fielder::Shortstop,
+            _ => self.second_base_cover(),
         };
-        self.move_toward(fielder, target, speed * dt);
-        if rolling && fielder != Fielder::First {
-            self.move_toward(Fielder::First, FIRST_BASE, INFIELDER_SPEED * dt);
-        }
-        if rolling && !fielder.infield() {
-            self.move_toward(self.second_base_cover(), SECOND_BASE, INFIELDER_SPEED * dt);
-            if runner_target >= 2 {
-                self.move_toward(Fielder::Third, THIRD_BASE, INFIELDER_SPEED * dt);
+        for (cover, bag) in [
+            (Fielder::First, FIRST_BASE),
+            (second, SECOND_BASE),
+            (Fielder::Third, THIRD_BASE),
+        ] {
+            if cover != fielder && Some(cover) != receiver {
+                self.move_toward(cover, bag, PLAYER_SPEED * dt);
             }
         }
-        self.chasing = Some(fielder);
     }
 
     pub fn position(&self, fielder: Fielder) -> Vec2 {
@@ -210,17 +205,17 @@ impl FieldReturn {
         let (throw_speed, exchange) = if fielder.infield() {
             (INFIELDER_THROW_SPEED, 0.38)
         } else {
-            (OUTFIELDER_THROW_SPEED, 0.28)
+            (OUTFIELDER_THROW_SPEED, 0.60)
         };
         let travel = if carrying {
-            start.distance(target) / INFIELDER_SPEED
+            start.distance(target) / PLAYER_SPEED
         } else {
             (release.xz().distance(target) / throw_speed).max(0.12)
         };
         let transfer = if carrying {
             0.18
         } else {
-            let cover = defense.position(receiver).distance(target) / INFIELDER_SPEED;
+            let cover = defense.position(receiver).distance(target) / PLAYER_SPEED;
             (cover - travel).max(exchange)
         };
         Self {
@@ -242,7 +237,8 @@ impl FieldReturn {
         } else {
             dt
         };
-        defense.move_toward(self.receiver, self.target, INFIELDER_SPEED * moved);
+        defense.cover_bases(self.fielder, Some(self.receiver), dt);
+        defense.move_toward(self.receiver, self.target, PLAYER_SPEED * moved);
         self.elapsed += dt;
         self.arrived()
     }
