@@ -3,14 +3,17 @@ use macroquad::prelude::*;
 pub const ZONE_MIN: Vec2 = vec2(-0.215, 0.52);
 pub const ZONE_MAX: Vec2 = vec2(0.215, 1.16);
 pub const CENTER: Vec2 = vec2(0.0, 0.84);
-pub const MEET_RADIUS: Vec2 = vec2(0.225, 0.175);
-pub const BARREL_RADIUS: Vec2 = Vec2::splat(0.065);
+pub const CURSOR_RADIUS: f32 = (ZONE_MAX.x - ZONE_MIN.x) * 0.14;
+pub const CORE_RADIUS: f32 = CURSOR_RADIUS * 0.32;
+pub const MEET_RADIUS: f32 = CURSOR_RADIUS + DRAWN_BALL_RADIUS;
+pub const BARREL_RADIUS: f32 = CORE_RADIUS + DRAWN_BALL_RADIUS;
 pub const HIT_TIMING: f64 = 0.080;
 pub const BARREL_TIMING: f64 = 0.024;
 pub const SWING_LEAD: f64 = 0.075;
 pub const WINDUP: f64 = 0.68;
 pub const CATCH_DELAY: f64 = 0.13;
 pub const BALL_RADIUS: f32 = 0.037;
+pub const DRAWN_BALL_RADIUS: f32 = BALL_RADIUS * 1.25;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Swing {
@@ -35,10 +38,13 @@ pub struct Grade {
 pub fn grade(swing: Swing, arrival: f64, crossing: Vec2) -> Grade {
     let timing = swing.time + SWING_LEAD - arrival;
     let offset = swing.aim - crossing;
-    let distance = (offset / MEET_RADIUS).length();
-    let contact = if !in_zone(crossing) || timing.abs() > HIT_TIMING + 1e-9 || distance > 1.0 {
+    let distance = offset.length();
+    let contact = if !in_zone(crossing)
+        || timing.abs() > HIT_TIMING + 1e-9
+        || distance > MEET_RADIUS + 1e-6
+    {
         Contact::Miss
-    } else if timing.abs() <= BARREL_TIMING + 1e-9 && (offset / BARREL_RADIUS).length() <= 1.0 {
+    } else if timing.abs() <= BARREL_TIMING + 1e-9 && distance <= BARREL_RADIUS + 1e-6 {
         Contact::Barrel
     } else {
         Contact::Touch
@@ -138,7 +144,7 @@ mod tests {
             Contact::Touch
         );
         assert_eq!(
-            grade(swing(0.405, CENTER + vec2(0.0, 0.15)), 0.48, CENTER).contact,
+            grade(swing(0.405, CENTER + vec2(0.0, MEET_RADIUS)), 0.48, CENTER).contact,
             Contact::Touch
         );
         assert_eq!(
@@ -146,9 +152,34 @@ mod tests {
             Contact::Miss
         );
         assert_eq!(
-            grade(swing(0.405, CENTER + vec2(0.0, 0.18)), 0.48, CENTER).contact,
+            grade(
+                swing(0.405, CENTER + vec2(0.0, MEET_RADIUS + 0.001)),
+                0.48,
+                CENTER
+            )
+            .contact,
             Contact::Miss
         );
+    }
+
+    #[test]
+    fn overlapping_the_green_cursor_makes_contact_at_every_edge() {
+        for direction in [Vec2::X, Vec2::Y, vec2(-1.0, 1.0).normalize()] {
+            let swing = Swing {
+                time: 0.405,
+                aim: CENTER,
+            };
+            for (distance, expected) in [
+                (CORE_RADIUS + DRAWN_BALL_RADIUS - 0.0001, Contact::Barrel),
+                (CURSOR_RADIUS + DRAWN_BALL_RADIUS, Contact::Touch),
+                (CURSOR_RADIUS + DRAWN_BALL_RADIUS + 0.001, Contact::Miss),
+            ] {
+                assert_eq!(
+                    grade(swing, 0.48, CENTER + direction * distance).contact,
+                    expected
+                );
+            }
+        }
     }
 
     #[test]

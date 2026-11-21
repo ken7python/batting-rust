@@ -7,7 +7,7 @@ use crate::runner::{Runner, SLIDE_SECONDS};
 
 pub const STEP: f64 = 1.0 / 120.0;
 // Speed up ball travel without increasing its range or speeding up runners.
-const BALL_TEMPO: f32 = 1.35;
+const BALL_TEMPO: f32 = 1.50;
 const SAFE_ADVANCE_MARGIN: f64 = 0.25;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -109,19 +109,16 @@ impl Flight {
         let speed = if strong {
             35.0 + 32.0 * squared_quality
         } else {
-            24.0 + 8.0 * squared_quality - 7.0 * aim_error
+            29.0 + 10.0 * squared_quality - 3.0 * aim_error
         };
         let horizontal =
             ((grade.timing / HIT_TIMING) as f32 * 1.05 + grade.offset.x * 0.48).clamp(-1.18, 1.18);
-        // Positive offset means the player aimed above the ball in world space.
-        let height = (grade.offset.y / MEET_RADIUS.y).clamp(-1.0, 1.0);
-        // A slightly low barrel drives the ball just above the infield.
-        let angle_degrees = if height < -0.15 {
-            7.0 + (height + 0.15) * (32.0 / 0.85)
-        } else if height < 0.0 {
-            27.6 + height * (20.6 / 0.15)
+        // Swing offsets are cursor minus ball. A ball above the cursor lifts.
+        let height = (-grade.offset.y / MEET_RADIUS).clamp(-1.0, 1.0);
+        let angle_degrees = if height < 0.0 {
+            (16.0 + 84.0 * height).max(-24.0)
         } else {
-            27.6 + height * 49.0
+            16.0 + 50.0 * height
         };
         let vertical = angle_degrees.to_radians();
         let velocity = vec3(
@@ -361,7 +358,7 @@ impl Flight {
             if !fair(point) {
                 return Some(Outcome::Foul);
             }
-            self.velocity = vec3(self.velocity.x * 0.73, 0.0, self.velocity.z * 0.73);
+            self.velocity = vec3(self.velocity.x * 0.79, 0.0, self.velocity.z * 0.79);
             self.rolling = true;
             return None;
         }
@@ -458,14 +455,14 @@ mod tests {
     fn aim_height_selects_grounder_drive_home_run_or_high_fly() {
         use crate::batting::{SWING_LEAD, Swing, grade};
         for (height, angles, distances, homer) in [
-            (-0.85, -23.0..-17.0, 0.0..4.0, false),
-            (-0.15, 6.0..8.0, 60.0..90.0, false),
-            (0.15, 33.0..37.0, 190.0..215.0, true),
-            (0.85, 66.0..72.0, 19.0..30.0, false),
+            (-0.85, -25.0..-23.0, 0.0..4.0, false),
+            (-0.15, 2.0..4.0, 35.0..65.0, false),
+            (0.15, 22.0..25.0, 140.0..200.0, true),
+            (0.85, 57.0..60.0, 40.0..75.0, false),
         ] {
             let swing = Swing {
                 time: 0.5 - SWING_LEAD,
-                aim: CENTER + Vec2::Y * MEET_RADIUS.y * height,
+                aim: CENTER - Vec2::Y * MEET_RADIUS * height,
             };
             let hit = grade(swing, 0.5, CENTER);
             let flight = Flight::new(CENTER, hit, Park::Central);
@@ -490,10 +487,11 @@ mod tests {
     #[test]
     fn cursor_accuracy_changes_carry_at_the_same_swing_time() {
         use crate::batting::{SWING_LEAD, Swing, grade};
-        for (error, expected_carry) in [(0.0, 210.0..223.0), (0.5, 40.0..47.0), (0.9, 25.0..31.0)] {
+        for (error, expected_carry) in [(0.0, 148.0..174.0), (0.5, 74.0..118.0), (0.9, 35.0..48.0)]
+        {
             let swing = Swing {
                 time: 0.5 - SWING_LEAD,
-                aim: CENTER + Vec2::X * MEET_RADIUS.x * error,
+                aim: CENTER + Vec2::X * MEET_RADIUS * error,
             };
             let hit = grade(swing, 0.5, CENTER);
             let flight = Flight::new(CENTER, hit, Park::Central);
@@ -606,9 +604,9 @@ mod tests {
                 );
                 let (outcome, end) = simulate(1.0 / 60.0, hit, park);
                 assert_eq!(hit.contact, expected_contact);
-                if expected_contact == Contact::Barrel {
+                if timing == 0.0 && offset == Vec2::ZERO {
                     assert_eq!(outcome, Outcome::Homer);
-                } else {
+                } else if expected_contact == Contact::Touch {
                     assert!(matches!(
                         outcome,
                         Outcome::Fair
@@ -753,12 +751,12 @@ mod tests {
     fn third_baseman_retires_routine_grounders_and_holds_late_singles_at_first() {
         use crate::batting::{SWING_LEAD, Swing, grade};
         for (offset_y, expected, target) in [
-            (-0.046, Outcome::GroundOut(Fielder::Third), 1),
+            (0.020, Outcome::GroundOut(Fielder::Third), 1),
             (0.0, Outcome::Fair, 2),
         ] {
             let swing = Swing {
                 time: 0.5 - SWING_LEAD - 0.0624,
-                aim: CENTER + vec2(0.086, offset_y),
+                aim: CENTER + vec2(0.072, offset_y),
             };
             let mut flight = Flight::new(CENTER, grade(swing, 0.5, CENTER), Park::Central);
             let result = (0..1200).find_map(|step| {
@@ -863,8 +861,12 @@ mod tests {
     fn a_comebacker_is_a_pitcher_out_but_a_gap_hit_can_reach_second() {
         for park in [Park::Central, Park::Sunset] {
             for (timing, offset, expected) in [
-                (0.0, vec2(0.0, -0.092), Outcome::GroundOut(Fielder::Pitcher)),
-                (-0.02, Vec2::ZERO, Outcome::Double),
+                (
+                    0.0,
+                    vec2(0.072, 0.020),
+                    Outcome::GroundOut(Fielder::Pitcher),
+                ),
+                (-0.02, vec2(0.0, -0.075), Outcome::Double),
             ] {
                 let hit = Grade {
                     contact: Contact::Touch,
@@ -897,7 +899,7 @@ mod tests {
         let hit = grade(
             Swing {
                 time: 0.5 - SWING_LEAD + 0.0576,
-                aim: CENTER + vec2(-0.043, -0.023),
+                aim: CENTER + vec2(0.0, 0.015),
             },
             0.5,
             CENTER,

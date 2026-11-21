@@ -558,7 +558,7 @@ pub fn pitcher(time: f64, delivery: Delivery) {
 }
 
 pub fn ball(p: Vec3) {
-    draw_sphere(p, BALL_RADIUS * 1.25, None, WHITE);
+    draw_sphere(p, DRAWN_BALL_RADIUS, None, WHITE);
     draw_sphere(p + vec3(0.008, 0.0, 0.044), 0.008, None, MAROON);
 }
 
@@ -658,10 +658,9 @@ pub fn bat(time: f64, aim: &Aim) {
     }
 }
 
-pub fn meet_cursor_radius(camera: &Camera3D) -> f32 {
-    let a = project(camera, on_plate(ZONE_MIN));
-    let b = project(camera, on_plate(ZONE_MAX));
-    (b.x - a.x).abs() * 0.14
+pub fn meet_cursor_radius(camera: &Camera3D, center: Vec2) -> f32 {
+    let edge = center + Vec2::X * CURSOR_RADIUS;
+    project(camera, on_plate(center)).distance(project(camera, on_plate(edge)))
 }
 
 pub fn reticle(camera: &Camera3D, aim: &Aim) {
@@ -681,19 +680,17 @@ pub fn reticle(camera: &Camera3D, aim: &Aim) {
     draw_rectangle(left + width - thickness, top, thickness, height, color);
     let p = project(camera, on_plate(aim.point));
     // Macroquad draws the stroke outside its input radius.
-    let radius = meet_cursor_radius(camera);
+    let radius = meet_cursor_radius(camera, aim.point);
     let stroke = radius * 0.24;
     let tint = if aim.held {
         Color::from_rgba(181, 255, 102, 255)
     } else {
         AIM_GREEN
     };
-    if aim.held {
-        draw_circle(p.x, p.y, radius * 1.2, Color::new(0.55, 1.0, 0.28, 0.20));
-    }
+    draw_circle(p.x, p.y, radius, Color::new(tint.r, tint.g, tint.b, 0.14));
     draw_circle_lines(p.x, p.y, radius - stroke * 1.35, stroke * 1.7, INK);
     draw_circle_lines(p.x, p.y, radius - stroke, stroke, tint);
-    draw_circle(p.x, p.y, radius * 0.14, tint);
+    draw_circle(p.x, p.y, radius * CORE_RADIUS / CURSOR_RADIUS, tint);
 }
 
 pub fn aim_movement(camera: &Camera3D, pixels: Vec2) -> Vec2 {
