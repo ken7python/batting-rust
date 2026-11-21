@@ -849,6 +849,23 @@ mod tests {
     }
 
     #[test]
+    fn center_fielder_retreats_from_shallow_alignment_to_catch_a_high_fly() {
+        use crate::batting::{SWING_LEAD, Swing, grade};
+        for park in [Park::Central, Park::Sunset] {
+            let swing = Swing {
+                time: 0.5 - SWING_LEAD,
+                aim: CENTER - Vec2::Y * 0.075,
+            };
+            let mut flight = Flight::new(CENTER, grade(swing, 0.5, CENTER), park);
+            let initial_depth = flight.defense.position(Fielder::Center).length();
+            let result = (0..1200).find_map(|_| flight.advance(STEP));
+            assert_eq!(result, Some(Outcome::FlyOut(Fielder::Center)), "{park:?}");
+            assert!(flight.defense.position(Fielder::Center).length() > initial_depth + 6.0);
+            assert!(flight.ground_contact.is_none());
+        }
+    }
+
+    #[test]
     fn a_caught_fly_is_out_and_a_shallow_outfield_hit_stops_at_first() {
         for (position, velocity, expected) in [
             (
