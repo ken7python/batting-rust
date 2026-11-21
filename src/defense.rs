@@ -9,7 +9,7 @@ pub const THIRD_BASE: Vec2 = vec2(-19.4, -19.4);
 
 pub const PLAYER_SPEED: f32 = 8.5;
 const INFIELDER_THROW_SPEED: f32 = 34.0;
-const OUTFIELDER_THROW_SPEED: f32 = 17.0;
+const OUTFIELDER_THROW_SPEED: f32 = 22.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fielder {
@@ -95,8 +95,19 @@ impl Defense {
                 * 0.90
         };
         let target = position.xz() + velocity.xz() * lead;
-        let index = self.closest(target);
-        let fielder = Fielder::ALL[index];
+        let depth = if rolling { position.z } else { target.y };
+        let fielder = Fielder::ALL
+            .into_iter()
+            .filter(|&fielder| {
+                // Infielders can reach just behind their spot without chasing into the outfield.
+                !fielder.infield() || depth >= self.position(fielder).y - 3.0
+            })
+            .min_by(|&a, &b| {
+                self.position(a)
+                    .distance_squared(target)
+                    .total_cmp(&self.position(b).distance_squared(target))
+            })
+            .expect("there is always an outfielder");
         if !fielder.infield() && elapsed < 0.34 {
             return;
         }
@@ -174,16 +185,6 @@ impl Defense {
         } else {
             Fielder::Shortstop
         }
-    }
-
-    fn closest(&self, target: Vec2) -> usize {
-        (0..self.positions.len())
-            .min_by(|&a, &b| {
-                self.positions[a]
-                    .distance_squared(target)
-                    .total_cmp(&self.positions[b].distance_squared(target))
-            })
-            .expect("there is always a fielder")
     }
 }
 
