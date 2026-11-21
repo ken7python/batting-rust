@@ -219,11 +219,17 @@ impl Flight {
             && !self.runner.moving()
             && self.runner.target() < 3
             && !self.home_run
-            && (self.runner.target() == 1 || self.can_stretch_hit())
         {
-            let (ball_time, slow_pickup) = self.time_to_defend_next_base();
             let mut advancing = self.runner;
             advancing.start_next_leg();
+            if advancing.target() == 3 && self.outfield_has_not_thrown() {
+                self.runner = advancing;
+                return None;
+            }
+            if advancing.target() == 3 && !self.can_stretch_hit() {
+                return None;
+            }
+            let (ball_time, slow_pickup) = self.time_to_defend_next_base();
             // Be conservative about stretching a ball that reached the ground in the infield.
             let margin = if advancing.target() == 2 && self.landed_in_infield() && !slow_pickup {
                 SHALLOW_HIT_ADVANCE_MARGIN
@@ -236,6 +242,17 @@ impl Flight {
             }
         }
         result
+    }
+
+    fn outfield_has_not_thrown(&self) -> bool {
+        match self.returning {
+            Some(throw) => !throw.fielder.infield() && !throw.released(),
+            None => {
+                self.rolling
+                    && self.position.xz().length_squared()
+                        >= crate::defense::SECOND_BASE.length_squared()
+            }
+        }
     }
 
     fn landed_in_infield(&self) -> bool {
@@ -978,6 +995,54 @@ mod tests {
         let throw = flight.returning.unwrap();
         assert_eq!((throw.fielder, throw.base), (Fielder::Third, 1));
         assert_eq!(flight.runner.position(), crate::defense::FIRST_BASE);
+    }
+
+    #[test]
+    fn reaching_second_before_the_outfield_return_triggers_a_try_for_third() {
+        for released in [None, Some(false), Some(true)] {
+            let mut flight = Flight::new(
+                CENTER,
+                Grade {
+                    contact: Contact::Touch,
+                    timing: 0.0,
+                    offset: Vec2::ZERO,
+                },
+                Park::Central,
+            );
+            flight.runner.advance(flight.runner.remaining_time());
+            flight.runner.start_next_leg();
+            flight
+                .runner
+                .advance(flight.runner.remaining_time() - STEP * 0.5);
+            flight.position = vec3(0.0, BALL_RADIUS, -72.0);
+            flight.rolling = true;
+            flight.elapsed = 5.0;
+            if let Some(released) = released {
+                flight.defense.positions[Fielder::Center as usize] = flight.position.xz();
+                let mut returning = FieldReturn::with_urgency(
+                    Fielder::Center,
+                    flight.position,
+                    &flight.defense,
+                    2,
+                    false,
+                );
+                if released {
+                    returning.advance(&mut flight.defense, 0.8);
+                    assert!(returning.airborne());
+                }
+                flight.returning = Some(returning);
+            }
+
+            assert!(flight.advance(STEP).is_none());
+            let target = if released == Some(true) { 2 } else { 3 };
+            assert_eq!(flight.runner.target(), target);
+            let result = (0..1200).find_map(|_| flight.advance(STEP)).unwrap();
+            if target == 3 {
+                assert!(matches!(result, Outcome::Triple | Outcome::BaseOut(_)));
+            } else {
+                assert_eq!(result, Outcome::Double);
+            }
+        }
     }
 
     #[test]
