@@ -71,9 +71,9 @@ impl Defense {
                 vec2(9.0, -28.0),
                 vec2(-9.0, -28.0),
                 vec2(-15.0, -21.0),
-                vec2(-31.0, -49.0) * outfield_scale,
-                vec2(0.0, -62.0) * outfield_scale,
-                vec2(31.0, -49.0) * outfield_scale,
+                vec2(-31.0, -44.0) * outfield_scale,
+                vec2(0.0, -56.0) * outfield_scale,
+                vec2(31.0, -44.0) * outfield_scale,
                 MOUND.xz(),
             ],
             chasing: None,
@@ -114,6 +114,8 @@ impl Defense {
         let speed = match fielder {
             Fielder::Pitcher => PLAYER_SPEED,
             _ if fielder.infield() => 12.0,
+            // Tracking a fly toward the fence takes longer than charging a ball in front.
+            _ if !rolling && target.length() > self.position(fielder).length() + 1.0 => 8.0,
             _ if rolling => 14.0,
             _ => 11.5,
         };
@@ -160,7 +162,7 @@ impl Defense {
             .filter_map(|fielder| {
                 let reach: f32 = match (fielder.infield(), airborne) {
                     (true, true) => 1.40,
-                    (true, false) => 1.45,
+                    (true, false) => 1.65,
                     (false, true) => 1.04,
                     (false, false) => 1.65,
                 };
