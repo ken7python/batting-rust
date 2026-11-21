@@ -82,7 +82,7 @@ impl Defense {
     }
 
     pub fn chase(&mut self, position: Vec3, velocity: Vec3, elapsed: f32, dt: f32, rolling: bool) {
-        if elapsed < 0.27 {
+        if elapsed < 0.20 {
             return;
         }
         let lead = if rolling {
@@ -108,10 +108,16 @@ impl Defense {
                     .total_cmp(&self.position(b).distance_squared(target))
             })
             .expect("there is always an outfielder");
-        if !fielder.infield() && elapsed < 0.34 {
+        if !rolling && !fielder.infield() && elapsed < 0.31 {
             return;
         }
-        self.move_toward(fielder, target, PLAYER_SPEED * dt);
+        let speed = match fielder {
+            Fielder::Pitcher => PLAYER_SPEED,
+            _ if fielder.infield() => 12.0,
+            _ if rolling => 14.0,
+            _ => 11.5,
+        };
+        self.move_toward(fielder, target, speed * dt);
         self.cover_bases(fielder, None, dt);
         self.chasing = Some(fielder);
     }
@@ -153,9 +159,10 @@ impl Defense {
             .into_iter()
             .filter_map(|fielder| {
                 let reach: f32 = match (fielder.infield(), airborne) {
-                    (true, true) => 1.30,
-                    (true, false) => 1.20,
-                    (false, _) => 0.94,
+                    (true, true) => 1.40,
+                    (true, false) => 1.45,
+                    (false, true) => 1.04,
+                    (false, false) => 1.65,
                 };
                 let distance = self.position(fielder).distance_squared(position);
                 (distance <= reach * reach).then_some((fielder, distance))
