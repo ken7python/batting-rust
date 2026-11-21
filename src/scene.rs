@@ -11,6 +11,7 @@ use crate::runner::{Runner, SLIDE_SECONDS};
 use crate::stands::Stands;
 
 use crate::defense::MOUND;
+const DEFENSE_BLUE: Color = Color::from_rgba(52, 113, 201, 255);
 const GRASS: Color = Color::from_rgba(49, 104, 74, 255);
 const DIRT: Color = Color::from_rgba(174, 113, 78, 255);
 const FENCE: Color = Color::from_rgba(23, 67, 59, 255);
@@ -363,20 +364,11 @@ pub fn fielders(
             pitcher(time, delivery);
             continue;
         }
-        let (jersey, cap) = if role == Fielder::Pitcher {
-            (
-                Color::from_rgba(245, 239, 220, 255),
-                Color::from_rgba(171, 57, 46, 255),
-            )
-        } else {
-            let blue = Color::from_rgba(52, 113, 201, 255);
-            (blue, blue)
-        };
         let catching = catch
             .filter(|(fielder, _)| *fielder == role)
             .map(|(_, ball)| ball);
         if let Some(ball) = catching.filter(|_| defense.diving == Some(role)) {
-            diving_fielder(point, ball, result_age, jersey, skin);
+            diving_fielder(point, ball, result_age, DEFENSE_BLUE, skin);
             continue;
         }
         let lift = catching.map_or(0.0, |ball| (ball.y - 1.79).clamp(0.0, 0.56));
@@ -397,14 +389,14 @@ pub fn fielders(
             feet + vec3(0.0, 1.12, 0.0),
             vec3(0.48, 0.59, 0.27),
             None,
-            jersey,
+            DEFENSE_BLUE,
         );
         draw_sphere(feet + vec3(0.0, 1.62, 0.02), 0.15, None, skin);
         draw_cube(
             feet + vec3(0.0, 1.73, 0.04),
             vec3(0.34, 0.10, 0.32),
             None,
-            cap,
+            DEFENSE_BLUE,
         );
         for side in [-1.0, 1.0] {
             draw_cube(
@@ -436,7 +428,7 @@ pub fn fielders(
                     shoulder.lerp(glove, joint as f32 / 6.0),
                     vec3(0.16, 0.16, 0.16),
                     None,
-                    if joint <= 2 { jersey } else { skin },
+                    if joint <= 2 { DEFENSE_BLUE } else { skin },
                 );
             }
         }
@@ -504,21 +496,19 @@ fn diving_fielder(point: Vec2, ball: Vec3, age: f32, jersey: Color, skin: Color)
 }
 
 pub fn pitcher(time: f64, delivery: Delivery) {
-    let jersey = Color::from_rgba(245, 239, 220, 255);
-    let red = Color::from_rgba(171, 57, 46, 255);
     let skin = Color::from_rgba(212, 151, 105, 255);
     let wind = ((time + WINDUP) / WINDUP).clamp(0.0, 1.0) as f32;
     let follow = (time / 0.31).clamp(0.0, 1.0) as f32;
     let mirror = delivery.hand.sign();
     let release = delivery.release();
     let body = MOUND + vec3(0.0, 1.14, 0.12 + 0.2 * wind);
-    draw_cube(body, vec3(0.44, 0.55, 0.24), None, jersey);
+    draw_cube(body, vec3(0.44, 0.55, 0.24), None, DEFENSE_BLUE);
     draw_sphere(body + vec3(0.0, 0.43, 0.01), 0.15, None, skin);
     draw_cube(
         body + vec3(0.0, 0.54, 0.05),
         vec3(0.32, 0.10, 0.33),
         None,
-        red,
+        DEFENSE_BLUE,
     );
     for side in [-1.0, 1.0] {
         let lift = if side * mirror < 0.0 {
@@ -530,13 +520,13 @@ pub fn pitcher(time: f64, delivery: Delivery) {
             body + vec3(side * 0.15, -0.62 + lift, 0.04),
             vec3(0.16, 0.75, 0.18),
             None,
-            jersey,
+            WHITE,
         );
         draw_cube(
             body + vec3(side * 0.15, -0.98 + lift, 0.11),
             vec3(0.21, 0.09, 0.29),
             None,
-            red,
+            DEFENSE_BLUE,
         );
     }
     let (reach, lift, drop) = match delivery.form {
@@ -559,7 +549,7 @@ pub fn pitcher(time: f64, delivery: Delivery) {
             (body + vec3(0.21 * mirror, 0.17, 0.04)).lerp(hand, i as f32 / 6.0),
             0.081,
             None,
-            if i < 3 { red } else { skin },
+            if i < 3 { DEFENSE_BLUE } else { skin },
         );
     }
     if time < 0.0 {
