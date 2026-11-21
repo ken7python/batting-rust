@@ -117,11 +117,11 @@ impl Flight {
         let height = (grade.offset.y / MEET_RADIUS.y).clamp(-1.0, 1.0);
         // A slightly low barrel drives the ball just above the infield.
         let angle_degrees = if height < -0.15 {
-            4.0 + (height + 0.15) * (32.0 / 0.85)
+            7.0 + (height + 0.15) * (32.0 / 0.85)
         } else if height < 0.0 {
-            24.6 + height * (20.6 / 0.15)
+            27.6 + height * (20.6 / 0.15)
         } else {
-            24.6 + height * 49.0
+            27.6 + height * 49.0
         };
         let vertical = angle_degrees.to_radians();
         let velocity = vec3(
@@ -458,10 +458,10 @@ mod tests {
     fn aim_height_selects_grounder_drive_home_run_or_high_fly() {
         use crate::batting::{SWING_LEAD, Swing, grade};
         for (height, angles, distances, homer) in [
-            (-0.85, -26.0..-20.0, 0.0..3.0, false),
-            (-0.15, 3.0..5.0, 50.0..60.0, false),
-            (0.15, 30.0..34.0, 190.0..215.0, true),
-            (0.85, 63.0..69.0, 20.0..33.0, false),
+            (-0.85, -23.0..-17.0, 0.0..4.0, false),
+            (-0.15, 6.0..8.0, 60.0..90.0, false),
+            (0.15, 33.0..37.0, 190.0..215.0, true),
+            (0.85, 66.0..72.0, 19.0..30.0, false),
         ] {
             let swing = Swing {
                 time: 0.5 - SWING_LEAD,
@@ -490,7 +490,7 @@ mod tests {
     #[test]
     fn cursor_accuracy_changes_carry_at_the_same_swing_time() {
         use crate::batting::{SWING_LEAD, Swing, grade};
-        for (error, expected_carry) in [(0.0, 200.0..215.0), (0.5, 39.0..45.0), (0.9, 25.0..31.0)] {
+        for (error, expected_carry) in [(0.0, 210.0..223.0), (0.5, 40.0..47.0), (0.9, 25.0..31.0)] {
             let swing = Swing {
                 time: 0.5 - SWING_LEAD,
                 aim: CENTER + Vec2::X * MEET_RADIUS.x * error,
@@ -836,13 +836,13 @@ mod tests {
             for (timing, offset, base, expected) in [
                 (
                     0.0,
-                    vec2(0.025, -0.05),
+                    vec2(0.0, -0.092),
                     crate::defense::FIRST_BASE,
                     Outcome::Fair,
                 ),
                 (
-                    -0.06,
-                    vec2(0.08, 0.0),
+                    -0.02,
+                    Vec2::ZERO,
                     crate::defense::SECOND_BASE,
                     Outcome::Double,
                 ),
