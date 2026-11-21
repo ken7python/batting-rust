@@ -113,7 +113,7 @@ impl Flight {
         let speed = if strong {
             let centered = (1.0 - grade.offset.length() / BARREL_RADIUS).max(0.0);
             let timed = (1.0 - (grade.timing.abs() / ON_TIME_WINDOW) as f32).max(0.0);
-            contact_speed + (6.0 + 7.0 * lift) * centered * timed.powi(3)
+            contact_speed + (2.0 + 10.0 * lift) * centered * timed.powi(3)
         } else {
             contact_speed
         };
@@ -482,7 +482,7 @@ mod tests {
         for (height, angles, distances, homer) in [
             (-0.85, -25.0..-23.0, 0.0..4.0, false),
             (-0.15, 27.0..29.0, 120.0..140.0, true),
-            (0.15, 10.0..12.0, 55.0..80.0, false),
+            (0.15, 10.0..12.0, 50.0..65.0, false),
             (0.85, 57.0..60.0, 40.0..75.0, false),
         ] {
             let swing = Swing {
@@ -514,7 +514,7 @@ mod tests {
     #[test]
     fn cursor_accuracy_changes_carry_at_the_same_swing_time() {
         use crate::batting::{SWING_LEAD, Swing, grade};
-        for (error, expected_carry) in [(0.0, 65.0..75.0), (0.5, 37.0..45.0), (0.9, 35.0..48.0)] {
+        for (error, expected_carry) in [(0.0, 57.0..62.0), (0.5, 37.0..43.0), (0.9, 35.0..48.0)] {
             let swing = Swing {
                 time: 0.5 - SWING_LEAD,
                 aim: CENTER + Vec2::X * MEET_RADIUS * error,
