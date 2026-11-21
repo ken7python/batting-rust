@@ -389,12 +389,12 @@ impl Flight {
                     1
                 },
             );
-            self.returning = Some(FieldReturn::new(
-                fielder,
-                self.position,
-                &self.defense,
-                base,
-            ));
+            let mut throw = FieldReturn::new(fielder, self.position, &self.defense, base);
+            // Concede the single if a throw across the diamond would be clearly late.
+            if base == 1 && f64::from(throw.remaining()) > self.runner.remaining_time() + 0.20 {
+                throw = FieldReturn::new(fielder, self.position, &self.defense, 2);
+            }
+            self.returning = Some(throw);
             self.first_pickup = Some(self.position);
             self.velocity = Vec3::ZERO;
         }
@@ -737,14 +737,42 @@ mod tests {
             });
             assert_eq!(outcome, Some(expected));
             assert!(threw);
-            let first = crate::defense::FIRST_BASE;
-            assert!(flight.position.xz().abs_diff_eq(first, 0.01));
+            let throw = flight.returning.unwrap();
+            assert_eq!(throw.base, if expected == Outcome::Fair { 2 } else { 1 });
+            assert!(flight.position.xz().abs_diff_eq(throw.target, 0.01));
             assert!(
                 flight
                     .defense
-                    .position(Fielder::First)
-                    .abs_diff_eq(first, 0.01)
+                    .position(throw.receiver)
+                    .abs_diff_eq(throw.target, 0.01)
             );
+        }
+    }
+
+    #[test]
+    fn third_baseman_retires_routine_grounders_and_holds_late_singles_at_first() {
+        use crate::batting::{SWING_LEAD, Swing, grade};
+        for (offset_y, expected, target) in [
+            (-0.046, Outcome::GroundOut(Fielder::Third), 1),
+            (0.0, Outcome::Fair, 2),
+        ] {
+            let swing = Swing {
+                time: 0.5 - SWING_LEAD - 0.0624,
+                aim: CENTER + vec2(0.086, offset_y),
+            };
+            let mut flight = Flight::new(CENTER, grade(swing, 0.5, CENTER), Park::Central);
+            let result = (0..1200).find_map(|step| {
+                if step % 24 == 0 && flight.can_boost_runner() {
+                    flight.runner.tap();
+                }
+                flight.advance(STEP)
+            });
+            assert_eq!(result, Some(expected));
+            let throw = flight.returning.unwrap();
+            assert_eq!((throw.fielder, throw.base), (Fielder::Third, target));
+            if expected == Outcome::Fair {
+                assert_eq!(flight.runner.position(), crate::defense::FIRST_BASE);
+            }
         }
     }
 
@@ -752,7 +780,7 @@ mod tests {
     fn a_committed_runner_contests_the_next_base_after_a_relay() {
         for (extra_time, expected) in [
             (0.0, Outcome::BaseOut(Fielder::Third)),
-            (1.9, Outcome::Triple),
+            (2.4, Outcome::Triple),
         ] {
             let mut flight = Flight::new(
                 CENTER,

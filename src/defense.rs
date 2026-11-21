@@ -8,7 +8,7 @@ pub const SECOND_BASE: Vec2 = vec2(0.0, -38.8);
 pub const THIRD_BASE: Vec2 = vec2(-19.4, -19.4);
 
 pub const PLAYER_SPEED: f32 = 8.5;
-const INFIELDER_THROW_SPEED: f32 = 24.0;
+const INFIELDER_THROW_SPEED: f32 = 34.0;
 const OUTFIELDER_THROW_SPEED: f32 = 17.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -225,7 +225,7 @@ impl FieldReturn {
         let release = on_field(start + toward * 0.30, 1.65);
         let carrying = fielder == receiver;
         let (throw_speed, exchange) = if fielder.infield() {
-            (INFIELDER_THROW_SPEED, 0.38)
+            (INFIELDER_THROW_SPEED, 0.28)
         } else {
             (OUTFIELDER_THROW_SPEED, 0.60)
         };
