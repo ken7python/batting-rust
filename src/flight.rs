@@ -10,6 +10,7 @@ use crate::runner::{Runner, SLIDE_SECONDS};
 pub const STEP: f64 = 1.0 / 120.0;
 // Speed up ball travel without increasing its range or speeding up runners.
 const BALL_TEMPO: f32 = 1.50;
+const GROUND_SPEED_RETENTION: f32 = 0.85;
 const SAFE_ADVANCE_MARGIN: f64 = 0.25;
 const SHALLOW_HIT_ADVANCE_MARGIN: f64 = 1.40;
 const SLOW_OUTFIELD_PICKUP: f32 = 0.75;
@@ -435,6 +436,7 @@ impl Flight {
                 return Some(Outcome::Foul);
             }
             self.velocity.y = 0.0;
+            self.velocity *= GROUND_SPEED_RETENTION;
             self.rolling = true;
             return None;
         }
@@ -794,7 +796,7 @@ mod tests {
         for park in [Park::Central, Park::Sunset] {
             for (timing, aim_height, expected, base) in [
                 (-0.070, 0.035, Outcome::Fair, crate::defense::FIRST_BASE),
-                (-0.054, 0.055, Outcome::Double, crate::defense::SECOND_BASE),
+                (-0.055, 0.035, Outcome::Double, crate::defense::SECOND_BASE),
             ] {
                 let swing = Swing {
                     time: 0.5 - SWING_LEAD + timing,
@@ -819,13 +821,13 @@ mod tests {
     fn an_infield_gap_grounder_stays_a_single_and_a_deep_fly_can_be_a_double() {
         use crate::batting::{SWING_LEAD, Swing, grade};
         for park in [Park::Central, Park::Sunset] {
-            for (timing, aim_height, expected) in [
-                (-0.065, 0.04, Outcome::Fair),
-                (-0.027, 0.035, Outcome::Double),
+            for (timing, aim_offset, expected) in [
+                (-0.065, vec2(0.0, 0.04), Outcome::Fair),
+                (-0.037, vec2(0.02, 0.025), Outcome::Double),
             ] {
                 let swing = Swing {
                     time: 0.5 - SWING_LEAD + timing,
-                    aim: CENTER + Vec2::Y * aim_height,
+                    aim: CENTER + aim_offset,
                 };
                 let mut flight = Flight::new(CENTER, grade(swing, 0.5, CENTER), park);
                 assert_eq!(
@@ -1215,7 +1217,7 @@ mod tests {
     }
 
     #[test]
-    fn grounders_and_airborne_hits_keep_horizontal_speed_through_landing_and_roll() {
+    fn grounders_and_airborne_hits_slow_at_landing_then_roll_at_constant_speed() {
         for (height, vertical_speed) in [(0.08, -4.0), (0.20, -15.0)] {
             let mut flight = Flight::new(
                 CENTER,
@@ -1228,7 +1230,8 @@ mod tests {
             );
             flight.position = vec3(2.0, height, -2.0);
             flight.velocity = vec3(2.0, vertical_speed, -25.0);
-            let expected = air_velocity(flight.velocity, STEP as f32 * BALL_TEMPO).xz();
+            let expected = air_velocity(flight.velocity, STEP as f32 * BALL_TEMPO).xz()
+                * GROUND_SPEED_RETENTION;
             assert!(flight.advance(STEP).is_none());
             assert!(flight.ground_contact.is_some());
             let landed = flight.position;
