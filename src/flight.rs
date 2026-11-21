@@ -98,6 +98,7 @@ pub struct Flight {
     park: Park,
     rolling: bool,
     hit_wall: bool,
+    high_arc: bool,
     accumulator: f64,
 }
 
@@ -131,6 +132,10 @@ impl Flight {
         } else {
             ordinary_angle
         };
+        // Soften low drives while leaving ground balls and high arcs their own pace.
+        let liner =
+            (angle_degrees / 8.0).clamp(0.0, 1.0) * ((27.0 - angle_degrees) / 12.0).clamp(0.0, 1.0);
+        let speed = speed * (1.0 - 0.12 * liner);
         let vertical = angle_degrees.to_radians();
         let velocity = vec3(
             horizontal.sin() * vertical.cos(),
@@ -155,6 +160,7 @@ impl Flight {
             park,
             rolling: false,
             hit_wall: false,
+            high_arc: angle_degrees >= 24.0,
             accumulator: 0.0,
         }
     }
@@ -210,6 +216,7 @@ impl Flight {
             && !self.runner.moving()
             && self.runner.target() < 3
             && !self.home_run
+            && self.can_stretch_hit()
         {
             let ball_time = self.time_to_defend_next_base();
             let mut advancing = self.runner;
@@ -229,6 +236,20 @@ impl Flight {
             }
         }
         result
+    }
+
+    fn can_stretch_hit(&self) -> bool {
+        let point = self.batted_point().xz();
+        let depth = self.park.fence().0;
+        let deep_arc = self.high_arc
+            && (self.hit_wall
+                || self
+                    .ground_contact
+                    .is_some_and(|contact| contact.position.xz().length() >= depth * 0.74));
+        // The gaps sit between center field and the two corner outfielders.
+        let bearing = point.x.abs().atan2(-point.y);
+        let through_gap = (0.23..=0.44).contains(&bearing) && point.length() >= depth * 0.72;
+        deep_arc || through_gap
     }
 
     fn step_throw(&mut self, dt: f32) -> Option<Outcome> {
@@ -482,7 +503,7 @@ mod tests {
         for (height, angles, distances, homer) in [
             (-0.85, -25.0..-23.0, 0.0..4.0, false),
             (-0.15, 27.0..29.0, 120.0..140.0, true),
-            (0.15, 10.0..12.0, 50.0..65.0, false),
+            (0.15, 10.0..12.0, 40.0..46.0, false),
             (0.85, 57.0..60.0, 40.0..75.0, false),
         ] {
             let swing = Swing {
@@ -514,7 +535,7 @@ mod tests {
     #[test]
     fn cursor_accuracy_changes_carry_at_the_same_swing_time() {
         use crate::batting::{SWING_LEAD, Swing, grade};
-        for (error, expected_carry) in [(0.0, 57.0..62.0), (0.5, 37.0..43.0), (0.9, 35.0..48.0)] {
+        for (error, expected_carry) in [(0.0, 46.0..50.0), (0.5, 31.0..35.0), (0.9, 30.0..45.0)] {
             let swing = Swing {
                 time: 0.5 - SWING_LEAD,
                 aim: CENTER + Vec2::X * MEET_RADIUS * error,
@@ -532,13 +553,34 @@ mod tests {
     }
 
     #[test]
+    fn a_liner_toward_center_is_cut_off_near_the_fielders_starting_depth() {
+        use crate::batting::{SWING_LEAD, Swing, grade};
+        for park in [Park::Central, Park::Sunset] {
+            let swing = Swing {
+                time: 0.5 - SWING_LEAD + 0.015,
+                aim: CENTER,
+            };
+            let mut flight = Flight::new(CENTER, grade(swing, 0.5, CENTER), park);
+            let starting_depth = flight.defense.position(Fielder::Center).length();
+            let result = (0..1200).find_map(|_| flight.advance(STEP));
+            assert_eq!(result, Some(Outcome::HardFair), "{park:?}");
+            assert_eq!(flight.returning.unwrap().fielder, Fielder::Center);
+            assert!(
+                flight.batted_point().xz().length() <= starting_depth + 5.0,
+                "{park:?}: {:?}",
+                flight.batted_point()
+            );
+        }
+    }
+
+    #[test]
     fn on_time_drives_can_split_either_outfield_gap_and_stay_inside_the_fence() {
         use crate::batting::{SWING_LEAD, Swing, grade};
         for park in [Park::Central, Park::Sunset] {
-            for timing in [-0.020, 0.020] {
+            for timing in [-0.030, 0.030] {
                 let swing = Swing {
                     time: 0.5 - SWING_LEAD + timing,
-                    aim: CENTER - Vec2::Y * 0.024,
+                    aim: CENTER,
                 };
                 let hit = grade(swing, 0.5, CENTER);
                 assert_eq!(hit.contact, Contact::Barrel);
@@ -556,6 +598,7 @@ mod tests {
                 );
                 assert!(pickup.x * timing.signum() as f32 > 5.0);
                 assert!(!flight.hit_wall);
+                assert!(flight.can_stretch_hit());
             }
         }
     }
@@ -714,7 +757,7 @@ mod tests {
         for park in [Park::Central, Park::Sunset] {
             for (timing, aim_height, expected) in [
                 (-0.065, 0.04, Outcome::Fair),
-                (-0.080, -0.06, Outcome::Double),
+                (-0.027, 0.035, Outcome::Double),
             ] {
                 let swing = Swing {
                     time: 0.5 - SWING_LEAD + timing,
@@ -1026,7 +1069,7 @@ mod tests {
             result
         });
         assert!(covered_before_pickup);
-        assert_eq!(result, Some(Outcome::GroundOut(Fielder::First)));
+        assert_eq!(result, Some(Outcome::Fair));
     }
 
     #[test]
