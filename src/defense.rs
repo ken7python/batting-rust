@@ -348,6 +348,10 @@ impl FieldReturn {
         (self.elapsed / self.transfer).min(1.0)
     }
 
+    pub fn released(&self) -> bool {
+        self.elapsed >= self.transfer
+    }
+
     pub fn airborne(&self) -> bool {
         !self.carrying()
             && self.elapsed >= self.transfer
