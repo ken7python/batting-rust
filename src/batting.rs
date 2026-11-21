@@ -7,8 +7,8 @@ pub const CURSOR_RADIUS: f32 = (ZONE_MAX.x - ZONE_MIN.x) * 0.14;
 pub const CORE_RADIUS: f32 = CURSOR_RADIUS * 0.32;
 pub const MEET_RADIUS: f32 = CURSOR_RADIUS + DRAWN_BALL_RADIUS;
 pub const BARREL_RADIUS: f32 = CORE_RADIUS + DRAWN_BALL_RADIUS;
-pub const HIT_TIMING: f64 = 0.080;
-pub const BARREL_TIMING: f64 = 0.024;
+pub const HIT_TIMING: f64 = 0.108;
+const ON_TIME_WINDOW: f64 = 0.050;
 pub const SWING_LEAD: f64 = 0.075;
 pub const WINDUP: f64 = 0.68;
 pub const CATCH_DELAY: f64 = 0.13;
@@ -35,6 +35,10 @@ pub struct Grade {
     pub offset: Vec2,
 }
 
+pub fn on_time(timing: f64) -> bool {
+    timing.abs() <= ON_TIME_WINDOW + 1e-9
+}
+
 pub fn grade(swing: Swing, arrival: f64, crossing: Vec2) -> Grade {
     let timing = swing.time + SWING_LEAD - arrival;
     let offset = swing.aim - crossing;
@@ -44,7 +48,7 @@ pub fn grade(swing: Swing, arrival: f64, crossing: Vec2) -> Grade {
         || distance > MEET_RADIUS + 1e-6
     {
         Contact::Miss
-    } else if timing.abs() <= BARREL_TIMING + 1e-9 && distance <= BARREL_RADIUS + 1e-6 {
+    } else if on_time(timing) && distance <= BARREL_RADIUS + 1e-6 {
         Contact::Barrel
     } else {
         Contact::Touch
@@ -148,7 +152,7 @@ mod tests {
             Contact::Touch
         );
         assert_eq!(
-            grade(swing(0.49, CENTER), 0.48, CENTER).contact,
+            grade(swing(0.52, CENTER), 0.48, CENTER).contact,
             Contact::Miss
         );
         assert_eq!(

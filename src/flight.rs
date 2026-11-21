@@ -103,16 +103,15 @@ impl Flight {
     pub fn new(crossing: Vec2, grade: Grade, park: Park) -> Self {
         let strong = grade.contact == Contact::Barrel;
         let aim_error = (grade.offset / MEET_RADIUS).length().min(1.0);
-        let quality = (1.0 - 0.65 * aim_error - 0.35 * (grade.timing.abs() / HIT_TIMING) as f32)
-            .clamp(0.0, 1.0);
+        let timing_fraction = (grade.timing / HIT_TIMING) as f32;
+        let quality = (1.0 - 0.65 * aim_error - 0.315 * timing_fraction.abs()).clamp(0.0, 1.0);
         let squared_quality = quality * quality;
         let speed = if strong {
             24.0 + 39.0 * squared_quality
         } else {
             29.0 + 10.0 * squared_quality - 3.0 * aim_error
         };
-        let horizontal =
-            ((grade.timing / HIT_TIMING) as f32 * 1.05 + grade.offset.x * 0.48).clamp(-1.18, 1.18);
+        let horizontal = (timing_fraction * 0.945 + grade.offset.x * 0.48).clamp(-1.18, 1.18);
         // Swing offsets are cursor minus ball. A ball above the cursor lifts.
         let height = (-grade.offset.y / MEET_RADIUS).clamp(-1.0, 1.0);
         let angle_degrees = if height < 0.0 {
@@ -618,7 +617,7 @@ mod tests {
         let arrival = 0.48;
         for park in [Park::Central, Park::Sunset] {
             for (timing, offset, expected_contact) in [
-                (0.026, Vec2::ZERO, Contact::Touch),
+                (0.052, Vec2::ZERO, Contact::Touch),
                 (0.0, vec2(0.064, 0.0), Contact::Barrel),
                 (0.0, vec2(0.066, 0.0), Contact::Touch),
                 (0.0, vec2(0.03, -0.10), Contact::Touch),
@@ -785,7 +784,7 @@ mod tests {
             (0.0, Outcome::Fair, 2),
         ] {
             let swing = Swing {
-                time: 0.5 - SWING_LEAD - 0.0624,
+                time: 0.5 - SWING_LEAD - 0.0936,
                 aim: CENTER + vec2(0.072, offset_y),
             };
             let mut flight = Flight::new(CENTER, grade(swing, 0.5, CENTER), Park::Central);
@@ -896,7 +895,7 @@ mod tests {
                     vec2(0.072, 0.020),
                     Outcome::GroundOut(Fielder::Pitcher),
                 ),
-                (-0.02, vec2(0.0, -0.075), Outcome::Double),
+                (-0.03, vec2(0.0, -0.075), Outcome::Double),
             ] {
                 let hit = Grade {
                     contact: Contact::Touch,
@@ -928,7 +927,7 @@ mod tests {
         use crate::batting::{SWING_LEAD, Swing, grade};
         let hit = grade(
             Swing {
-                time: 0.5 - SWING_LEAD + 0.0576,
+                time: 0.5 - SWING_LEAD + 0.0864,
                 aim: CENTER + vec2(0.0, 0.015),
             },
             0.5,
@@ -995,7 +994,7 @@ mod tests {
     fn an_early_glancing_swing_can_go_foul() {
         let early = Grade {
             contact: Contact::Touch,
-            timing: -0.079,
+            timing: -0.106,
             offset: Vec2::ZERO,
         };
         let (result, point) = simulate(1.0 / 60.0, early, Park::Central);
@@ -1009,7 +1008,7 @@ mod tests {
             CENTER,
             Grade {
                 contact: Contact::Touch,
-                timing: -0.079,
+                timing: -0.106,
                 offset: Vec2::ZERO,
             },
             Park::Central,
