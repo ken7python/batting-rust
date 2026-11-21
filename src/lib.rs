@@ -575,7 +575,7 @@ fn draw_play(
             if preview.visible(play.time) {
                 let predicted = play.pitch.preview_point(play.time);
                 let p = project(camera, predicted);
-                let radius = meet_cursor_radius(camera) * 0.5;
+                let radius = meet_cursor_radius(camera, play.aim.point) * 0.5;
                 let color = if predicted.z < 0.0 { GOLD } else { SKYBLUE };
                 draw_circle(p.x, p.y, radius, BLACK);
                 draw_circle(p.x, p.y, radius * 0.84, color);
