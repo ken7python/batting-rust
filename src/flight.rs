@@ -89,6 +89,7 @@ pub struct Flight {
     pub elapsed: f32,
     pub strong: bool,
     pub try_dive: bool,
+    pub try_infield_dive: bool,
     pub confident: bool,
     pub home_run: bool,
     pub defense: Defense,
@@ -152,6 +153,7 @@ impl Flight {
             elapsed: 0.0,
             strong,
             try_dive: false,
+            try_infield_dive: false,
             confident,
             home_run: false,
             defense: Defense::new(park),
@@ -409,11 +411,8 @@ impl Flight {
                         None
                     };
                     let catch = catch.or_else(|| {
-                        if self.try_dive {
-                            self.defense.dive_for(reachable)
-                        } else {
-                            None
-                        }
+                        self.defense
+                            .dive_for(reachable, self.try_infield_dive, self.try_dive)
                     });
                     if let Some(fielder) = catch {
                         self.position = reachable;
@@ -618,7 +617,7 @@ mod tests {
             for timing in [-0.030, 0.030] {
                 let swing = Swing {
                     time: 0.5 - SWING_LEAD + timing,
-                    aim: CENTER,
+                    aim: CENTER + Vec2::Y * 0.004,
                 };
                 let hit = grade(swing, 0.5, CENTER);
                 assert_eq!(hit.contact, Contact::Barrel);
@@ -898,6 +897,36 @@ mod tests {
             } else {
                 assert!(flight.ground_contact.is_none());
             }
+        }
+    }
+
+    #[test]
+    fn shortstop_can_catch_at_full_reach_or_dive_for_a_lower_ball() {
+        for (gap, allow_dive, caught) in
+            [(1.5, false, true), (2.25, false, false), (2.25, true, true)]
+        {
+            let mut flight = Flight::new(
+                CENTER,
+                Grade {
+                    contact: Contact::Touch,
+                    timing: 0.0,
+                    offset: Vec2::ZERO,
+                },
+                Park::Central,
+            );
+            let shortstop = flight.defense.position(Fielder::Shortstop);
+            flight.elapsed = 1.0;
+            flight.position = vec3(shortstop.x - gap, 0.8, shortstop.y);
+            flight.velocity = vec3(0.0, -4.0, 0.0);
+            flight.try_infield_dive = allow_dive;
+            assert_eq!(
+                flight.advance(STEP),
+                caught.then_some(Outcome::FlyOut(Fielder::Shortstop))
+            );
+            assert_eq!(
+                flight.defense.diving,
+                allow_dive.then_some(Fielder::Shortstop)
+            );
         }
     }
 
@@ -1182,7 +1211,7 @@ mod tests {
             result
         });
         assert!(covered_before_pickup);
-        assert_eq!(result, Some(Outcome::Fair));
+        assert_eq!(result, Some(Outcome::GroundOut(Fielder::First)));
     }
 
     #[test]

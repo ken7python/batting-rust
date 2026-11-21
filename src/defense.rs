@@ -180,8 +180,8 @@ impl Defense {
             .into_iter()
             .filter_map(|fielder| {
                 let reach: f32 = match (fielder.infield(), airborne) {
-                    (true, true) => 1.40,
-                    (true, false) => 1.65,
+                    (true, true) => 1.60,
+                    (true, false) => 1.80,
                     (false, true) => 1.04,
                     (false, false) => 1.65,
                 };
@@ -192,15 +192,35 @@ impl Defense {
             .map(|(fielder, _)| fielder)
     }
 
-    pub fn dive_for(&mut self, ball: Vec3) -> Option<Fielder> {
-        let fielder = self.chasing?;
-        let distance = self.position(fielder).distance(ball.xz());
-        if (0.32..=1.05).contains(&ball.y) && (0.85..=2.15).contains(&distance) {
-            self.diving = Some(fielder);
-            Some(fielder)
+    pub fn dive_for(&mut self, ball: Vec3, infield: bool, outfield: bool) -> Option<Fielder> {
+        let point = ball.xz();
+        let infielder = if infield && (0.25..=1.25).contains(&ball.y) {
+            [
+                Fielder::First,
+                Fielder::Second,
+                Fielder::Shortstop,
+                Fielder::Third,
+            ]
+            .into_iter()
+            .filter_map(|fielder| {
+                let distance = self.position(fielder).distance_squared(point);
+                (distance <= 2.55_f32.powi(2)).then_some((fielder, distance))
+            })
+            .min_by(|(_, a), (_, b)| a.total_cmp(b))
+            .map(|(fielder, _)| fielder)
         } else {
             None
-        }
+        };
+        let diver = infielder.or_else(|| {
+            self.chasing.filter(|&fielder| {
+                outfield
+                    && !fielder.infield()
+                    && (0.32..=1.05).contains(&ball.y)
+                    && (0.85..=2.15).contains(&self.position(fielder).distance(point))
+            })
+        });
+        self.diving = diver;
+        diver
     }
 
     fn second_base_cover(&self) -> Fielder {
