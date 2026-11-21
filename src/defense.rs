@@ -7,9 +7,9 @@ pub const FIRST_BASE: Vec2 = vec2(19.4, -19.4);
 pub const SECOND_BASE: Vec2 = vec2(0.0, -38.8);
 pub const THIRD_BASE: Vec2 = vec2(-19.4, -19.4);
 
-pub const PLAYER_SPEED: f32 = 8.5;
+pub const PLAYER_SPEED: f32 = 11.0;
 const INFIELDER_THROW_SPEED: f32 = 34.0;
-const OUTFIELDER_THROW_SPEED: f32 = 22.0;
+const OUTFIELDER_THROW_SPEED: f32 = 38.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fielder {

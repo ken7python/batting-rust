@@ -7,7 +7,7 @@ const LEG_TIME: f64 = FIRST_BASE.x as f64 * std::f64::consts::SQRT_2 / PLAYER_SP
 const ARRIVALS: [f64; 4] = [0.0, LEG_TIME, 2.0 * LEG_TIME, 3.0 * LEG_TIME];
 pub const SLIDE_SECONDS: f64 = 0.34;
 const BOOST_DURATION: f64 = 0.30;
-const BOOST_EXTRA_SPEED: f64 = 0.12;
+const BOOST_EXTRA_SPEED: f64 = 0.3;
 
 #[derive(Clone, Copy)]
 pub struct Runner {
