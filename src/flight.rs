@@ -400,10 +400,12 @@ impl Flight {
                     1
                 },
             );
-            let mut throw = FieldReturn::new(fielder, self.position, &self.defense, base);
+            let urgent = self.runner.target() == base && self.runner.moving();
+            let mut throw =
+                FieldReturn::with_urgency(fielder, self.position, &self.defense, base, urgent);
             // Concede the single if a throw across the diamond would be clearly late.
             if base == 1 && f64::from(throw.remaining()) > self.runner.remaining_time() + 0.20 {
-                throw = FieldReturn::new(fielder, self.position, &self.defense, 2);
+                throw = FieldReturn::with_urgency(fielder, self.position, &self.defense, 2, false);
             }
             self.returning = Some(throw);
             self.first_pickup = Some(self.position);
@@ -776,7 +778,7 @@ mod tests {
     #[test]
     fn a_grounder_is_an_out_only_when_the_throw_would_beat_the_batter() {
         for (elapsed, expected) in [
-            (1.1, Outcome::GroundOut(Fielder::Second)),
+            (0.7, Outcome::GroundOut(Fielder::Second)),
             (4.0, Outcome::Fair),
         ] {
             let mut flight = Flight::new(
@@ -820,10 +822,10 @@ mod tests {
     }
 
     #[test]
-    fn third_baseman_fields_routine_grounders_and_left_fielder_takes_hits_behind_him() {
+    fn third_baseman_fields_grounders_and_left_fielder_takes_hits_behind_him() {
         use crate::batting::{SWING_LEAD, Swing, grade};
         for (offset_y, expected, fielder, target) in [
-            (0.020, Outcome::GroundOut(Fielder::Third), Fielder::Third, 1),
+            (0.020, Outcome::Fair, Fielder::Third, 2),
             (0.0, Outcome::Fair, Fielder::Left, 2),
         ] {
             let swing = Swing {
@@ -930,47 +932,38 @@ mod tests {
     }
 
     #[test]
-    fn outfield_throw_holds_a_gap_hit_to_a_single_unless_the_runner_beats_it() {
+    fn close_pitcher_flip_rewards_a_quick_batter_without_giving_away_the_out() {
+        use crate::batting::{SWING_LEAD, Swing, grade};
         for park in [Park::Central, Park::Sunset] {
-            for (timing, offset, expected) in [
-                (
-                    0.0,
-                    vec2(0.072, 0.020),
-                    Outcome::GroundOut(Fielder::Pitcher),
-                ),
-                (-0.075, vec2(0.0, -0.024), Outcome::Fair),
+            let hit = grade(
+                Swing {
+                    time: 0.5 - SWING_LEAD + 0.020,
+                    aim: CENTER + vec2(0.08, 0.03),
+                },
+                0.5,
+                CENTER,
+            );
+            for (tap, expected) in [
+                (false, Outcome::GroundOut(Fielder::Pitcher)),
+                (true, Outcome::Fair),
             ] {
-                let hit = Grade {
-                    contact: Contact::Touch,
-                    timing,
-                    offset,
-                };
-                for tap in [false, true] {
-                    let mut flight = Flight::new(CENTER, hit, park);
-                    let result = (0..1800).find_map(|step| {
-                        if tap && step % 30 == 0 && flight.can_boost_runner() {
-                            flight.runner.tap();
-                        }
-                        flight.advance(STEP)
-                    });
-                    let expected = if expected == Outcome::Fair && park == Park::Sunset && tap {
-                        Outcome::Double
-                    } else {
-                        expected
-                    };
-                    assert_eq!(result, Some(expected), "{park:?}, tap={tap}");
-                    if expected.is_hit() {
-                        let bag = if expected == Outcome::Double {
-                            crate::defense::SECOND_BASE
-                        } else {
-                            crate::defense::FIRST_BASE
-                        };
-                        assert_eq!(flight.runner.position(), bag);
-                        assert!(!flight.returning.unwrap().fielder.infield());
-                    } else {
-                        assert_eq!(flight.returning.unwrap().receiver, Fielder::First);
-                        assert_eq!(flight.runner.reached(), 0);
+                let mut flight = Flight::new(CENTER, hit, park);
+                let mut flip_to_first = false;
+                let result = (0..1200).find_map(|step| {
+                    if tap && step % 30 == 0 && flight.can_boost_runner() {
+                        flight.runner.tap();
                     }
+                    let outcome = flight.advance(STEP);
+                    flip_to_first |= flight.returning.is_some_and(|play| {
+                        play.underhand() && play.fielder == Fielder::Pitcher && play.base == 1
+                    });
+                    outcome
+                });
+                assert_eq!(result, Some(expected), "{park:?}, tap={tap}");
+                if tap {
+                    assert_eq!(flight.runner.position(), crate::defense::FIRST_BASE);
+                } else {
+                    assert!(flip_to_first);
                 }
             }
         }
@@ -979,15 +972,16 @@ mod tests {
     #[test]
     fn pitcher_covers_first_and_receives_the_first_basemans_throw() {
         use crate::batting::{SWING_LEAD, Swing, grade};
+        let crossing = vec2(-0.2, CENTER.y);
         let hit = grade(
             Swing {
-                time: 0.5 - SWING_LEAD + 0.0864,
-                aim: CENTER + vec2(0.0, 0.015),
+                time: 0.5 - SWING_LEAD + 0.065,
+                aim: crossing + vec2(0.0, 0.020),
             },
             0.5,
-            CENTER,
+            crossing,
         );
-        let mut flight = Flight::new(CENTER, hit, Park::Central);
+        let mut flight = Flight::new(crossing, hit, Park::Central);
         let mut covered_before_pickup = false;
         let result = (0..1200).find_map(|_| {
             let result = flight.advance(STEP);
