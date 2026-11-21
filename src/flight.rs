@@ -8,8 +8,7 @@ use crate::runner::{Runner, SLIDE_SECONDS};
 pub const STEP: f64 = 1.0 / 120.0;
 // Speed up ball travel without increasing its range or speeding up runners.
 const BALL_TEMPO: f32 = 1.35;
-const SAFE_ADVANCE_MARGIN: f64 = 0.015;
-const CLOSE_ADVANCE_MARGIN: f64 = 0.22;
+const SAFE_ADVANCE_MARGIN: f64 = 0.25;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Outcome {
@@ -86,7 +85,6 @@ pub struct Flight {
     pub velocity: Vec3,
     pub elapsed: f32,
     pub strong: bool,
-    pub try_close_advance: bool,
     pub try_dive: bool,
     pub confident: bool,
     pub home_run: bool,
@@ -138,7 +136,6 @@ impl Flight {
             velocity,
             elapsed: 0.0,
             strong,
-            try_close_advance: false,
             try_dive: false,
             confident,
             home_run: false,
@@ -194,36 +191,23 @@ impl Flight {
         } else if !self.home_run {
             self.runner.advance(STEP);
         }
-        let took_second = self.runner.target() == 1
-            && !self.runner.moving()
-            && self.returning.is_some_and(|throw| {
-                !throw.fielder.infield() || throw.pickup.z < crate::defense::SECOND_BASE.y
-            });
-        if took_second {
-            self.runner.start_next_leg();
-        }
-        let result = if self.returning.is_some() {
+        let fielded = self.returning.is_some();
+        let result = if fielded {
             self.step_throw(dt)
         } else {
             self.step_batted_ball(dt)
         };
         if result.is_none()
-            && was_running
+            && (was_running || (!fielded && self.returning.is_some()))
             && !self.runner.moving()
             && self.runner.target() < 3
             && !self.home_run
         {
             let ball_time = self.time_to_defend_next_base();
-            let runner_time = self.runner.next_leg_time();
-            if ball_time >= runner_time + SAFE_ADVANCE_MARGIN {
-                self.runner.start_next_leg();
-            } else if self.try_close_advance
-                && ball_time >= runner_time - CLOSE_ADVANCE_MARGIN
-                && ball_time >= self.runner.fastest_next_leg_time() + STEP
-            {
-                // Commit once on a marginal play that steady tapping can still win.
-                self.try_close_advance = false;
-                self.runner.start_next_leg();
+            let mut advancing = self.runner;
+            advancing.start_next_leg();
+            if ball_time >= advancing.remaining_time() + SAFE_ADVANCE_MARGIN {
+                self.runner = advancing;
             }
         }
         result
@@ -342,14 +326,8 @@ impl Flight {
         if !self.home_run {
             let reachable = old.lerp(next, ground.unwrap_or(1.0));
             if fair(reachable) {
-                self.defense.chase(
-                    reachable,
-                    self.velocity,
-                    self.elapsed,
-                    dt,
-                    false,
-                    self.runner.target(),
-                );
+                self.defense
+                    .chase(reachable, self.velocity, self.elapsed, dt, false);
                 if !self.hit_wall && self.velocity.y < 0.0 {
                     let catch = if (0.45..=2.35).contains(&reachable.y) {
                         self.defense.within_reach(reachable.xz(), true)
@@ -400,20 +378,17 @@ impl Flight {
             self.position = vec3(stop.x, BALL_RADIUS, stop.y);
             self.velocity = Vec3::ZERO;
         }
-        self.defense.chase(
-            self.position,
-            self.velocity,
-            self.elapsed,
-            dt,
-            true,
-            self.runner.target(),
-        );
+        self.defense
+            .chase(self.position, self.velocity, self.elapsed, dt, true);
         if let Some(fielder) = self.defense.within_reach(self.position.xz(), false) {
             self.defense.chasing = Some(fielder);
-            let base = self
-                .runner
-                .target()
-                .max(if fielder.infield() { 1 } else { 2 });
+            let base = self.runner.target().max(
+                if !fielder.infield() || self.position.z < crate::defense::SECOND_BASE.y {
+                    2
+                } else {
+                    1
+                },
+            );
             self.returning = Some(FieldReturn::new(
                 fielder,
                 self.position,
@@ -597,7 +572,7 @@ mod tests {
         };
         for (park, expected) in [
             (Park::Sunset, Outcome::Homer),
-            (Park::Central, Outcome::Double),
+            (Park::Central, Outcome::HardFair),
         ] {
             let mut flight = Flight::new(CENTER, grade, park);
             flight.confident = false; // This fixture replaces the initially predicted homer.
@@ -649,7 +624,7 @@ mod tests {
     }
 
     #[test]
-    fn a_fly_is_caught_but_a_gap_shot_beats_the_throw_to_second_without_taps() {
+    fn a_caught_fly_is_out_and_a_shallow_outfield_hit_stops_at_first() {
         for (position, velocity, expected) in [
             (
                 vec3(3.8, 7.5, -53.0),
@@ -659,7 +634,7 @@ mod tests {
             (
                 vec3(16.0, 2.8, -38.0),
                 vec3(0.0, -5.0, -20.0),
-                Outcome::Double,
+                Outcome::Fair,
             ),
         ] {
             let mut flight = Flight::new(
@@ -677,9 +652,9 @@ mod tests {
             flight.runner.advance(f64::from(flight.elapsed));
             let outcome = (0..1000).find_map(|_| flight.advance(STEP));
             assert_eq!(outcome, Some(expected));
-            if expected == Outcome::Double {
-                assert_eq!(flight.runner.target(), 2);
-                assert_eq!(flight.runner.position(), crate::defense::SECOND_BASE);
+            if expected == Outcome::Fair {
+                assert_eq!(flight.runner.target(), 1);
+                assert_eq!(flight.runner.position(), crate::defense::FIRST_BASE);
                 let contact = flight
                     .ground_contact
                     .expect("a hit should record its first landing");
@@ -856,74 +831,38 @@ mod tests {
     }
 
     #[test]
-    fn a_close_attempt_can_be_lost_or_saved_by_tapping() {
-        for (chance, tapping, ball_time, target, expected) in [
-            (false, false, 1.73, 1, Outcome::Fair),
-            (true, false, 1.73, 2, Outcome::BaseOut(Fielder::Second)),
-            (true, true, 1.73, 2, Outcome::Double),
-            (true, true, 1.58, 1, Outcome::Fair),
-        ] {
-            let mut flight = Flight::new(
-                CENTER,
-                Grade {
-                    contact: Contact::Touch,
-                    timing: 0.0,
-                    offset: Vec2::ZERO,
-                },
-                Park::Central,
-            );
-            flight.try_close_advance = chance;
-            flight.runner.advance(flight.runner.remaining_time() - STEP);
-            flight.defense.positions[Fielder::Second as usize] = crate::defense::SECOND_BASE;
-            flight.defense.positions[Fielder::Shortstop as usize] =
-                crate::defense::SECOND_BASE - Vec2::Y * 110.0;
-            let mut returning = FieldReturn::new(
-                Fielder::Shortstop,
-                vec3(0.0, 1.1, -30.0),
-                &flight.defense,
-                2,
-            );
-            returning.advance(&mut flight.defense, returning.remaining() - ball_time);
-            flight.returning = Some(returning);
-            if ball_time < 1.65 {
-                // Even with acceleration already active, this throw is too fast.
-                flight.runner.tap();
-            }
-            assert!(flight.advance(STEP).is_none());
-            assert_eq!(flight.runner.target(), target);
-            let outcome = (0..600).find_map(|step| {
-                if tapping && step % 28 == 0 && flight.can_boost_runner() {
-                    flight.runner.tap();
-                }
-                flight.advance(STEP)
-            });
-            assert_eq!(outcome, Some(expected));
-        }
-    }
-
-    #[test]
-    fn runners_hold_at_second_or_contest_third_in_both_parks() {
-        let hit = Grade {
-            contact: Contact::Touch,
-            timing: 0.0,
-            offset: vec2(0.025, -0.05),
-        };
+    fn shallow_grounders_cannot_buy_extra_bases_but_gap_hits_can_reach_second() {
         for park in [Park::Central, Park::Sunset] {
-            for (tap, expected) in [(false, Outcome::Double), (true, Outcome::Triple)] {
-                let mut flight = Flight::new(CENTER, hit, park);
-                let result = (0..1800).find_map(|step| {
-                    if tap && step % 30 == 0 && flight.can_boost_runner() {
-                        flight.runner.tap();
-                    }
-                    flight.advance(STEP)
-                });
-                assert_eq!(result, Some(expected), "{park:?} with tap={tap}");
-                let base = if tap {
-                    crate::defense::THIRD_BASE
-                } else {
-                    crate::defense::SECOND_BASE
+            for (timing, offset, base, expected) in [
+                (
+                    0.0,
+                    vec2(0.025, -0.05),
+                    crate::defense::FIRST_BASE,
+                    Outcome::Fair,
+                ),
+                (
+                    -0.06,
+                    vec2(0.08, 0.0),
+                    crate::defense::SECOND_BASE,
+                    Outcome::Double,
+                ),
+            ] {
+                let hit = Grade {
+                    contact: Contact::Touch,
+                    timing,
+                    offset,
                 };
-                assert_eq!(flight.runner.position(), base);
+                for tap in [false, true] {
+                    let mut flight = Flight::new(CENTER, hit, park);
+                    let result = (0..1800).find_map(|step| {
+                        if tap && step % 30 == 0 && flight.can_boost_runner() {
+                            flight.runner.tap();
+                        }
+                        flight.advance(STEP)
+                    });
+                    assert_eq!(result, Some(expected), "{park:?}, tap={tap}");
+                    assert_eq!(flight.runner.position(), base);
+                }
             }
         }
     }

@@ -1,9 +1,10 @@
 use macroquad::prelude::*;
 
-use crate::defense::{FIRST_BASE, SECOND_BASE, THIRD_BASE};
+use crate::defense::{FIRST_BASE, PLAYER_SPEED, SECOND_BASE, THIRD_BASE};
 
 const BASES: [Vec2; 4] = [Vec2::ZERO, FIRST_BASE, SECOND_BASE, THIRD_BASE];
-const ARRIVALS: [f64; 4] = [0.0, 3.05, 4.90, 7.75];
+const LEG_TIME: f64 = FIRST_BASE.x as f64 * std::f64::consts::SQRT_2 / PLAYER_SPEED as f64;
+const ARRIVALS: [f64; 4] = [0.0, LEG_TIME, 2.0 * LEG_TIME, 3.0 * LEG_TIME];
 pub const SLIDE_SECONDS: f64 = 0.34;
 const BOOST_DURATION: f64 = 0.30;
 const BOOST_EXTRA_SPEED: f64 = 0.12;
@@ -43,19 +44,6 @@ impl Runner {
         let remaining = (ARRIVALS[self.target] - self.progress).max(0.0);
         let boosted = (remaining / (1.0 + BOOST_EXTRA_SPEED)).min(self.boost_remaining);
         remaining - boosted * BOOST_EXTRA_SPEED
-    }
-
-    pub fn next_leg_time(&self) -> f64 {
-        // An active boost permits a close attempt if the player keeps tapping.
-        if self.boost_remaining > 1e-9 {
-            self.fastest_next_leg_time()
-        } else {
-            ARRIVALS[self.target + 1] - ARRIVALS[self.target]
-        }
-    }
-
-    pub fn fastest_next_leg_time(&self) -> f64 {
-        (ARRIVALS[self.target + 1] - ARRIVALS[self.target]) / (1.0 + BOOST_EXTRA_SPEED)
     }
 
     pub fn start_next_leg(&mut self) {
@@ -104,7 +92,7 @@ mod tests {
     fn runner_touches_all_three_bases_and_stops_at_third() {
         let mut runner = Runner::default();
         assert_eq!(runner.position(), Vec2::ZERO);
-        runner.advance(3.04);
+        runner.advance(LEG_TIME - 0.01);
         assert_eq!(runner.reached(), 0);
         runner.advance(0.01);
         assert_eq!(runner.reached(), 1);
@@ -112,7 +100,7 @@ mod tests {
         runner.advance(5.0);
         assert_eq!(runner.position(), FIRST_BASE);
         runner.start_next_leg();
-        runner.advance(1.84);
+        runner.advance(LEG_TIME - 0.01);
         assert_eq!(runner.reached(), 1);
         runner.advance(0.01);
         assert_eq!(runner.reached(), 2);
@@ -122,6 +110,32 @@ mod tests {
         assert_eq!(runner.reached(), 3);
         assert_eq!(runner.position(), THIRD_BASE);
         assert!(!runner.moving());
+    }
+
+    #[test]
+    fn covering_fielders_match_the_unboosted_runner_while_the_ball_is_airborne() {
+        use crate::defense::{Defense, Fielder};
+        use crate::park::Park;
+
+        let mut defense = Defense::new(Park::Central);
+        let before = defense;
+        let mut runner = Runner::default();
+        let dt = 0.1;
+        runner.advance(dt);
+        defense.chase(vec3(0.0, 3.0, -60.0), Vec3::ZERO, 1.0, dt as f32, false);
+        let run = runner.position().length();
+        for (fielder, base) in [
+            (Fielder::First, FIRST_BASE),
+            (Fielder::Shortstop, SECOND_BASE),
+            (Fielder::Third, THIRD_BASE),
+        ] {
+            let closed =
+                before.position(fielder).distance(base) - defense.position(fielder).distance(base);
+            assert!(
+                (closed - run).abs() < 1e-5,
+                "{fielder:?} covered {closed}, runner covered {run}"
+            );
+        }
     }
 
     #[test]

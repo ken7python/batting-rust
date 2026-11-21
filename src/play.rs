@@ -82,7 +82,6 @@ impl Play {
                     self.contact = Some(hit);
                     let mut flight = Flight::new(self.pitch.crossing, hit, self.park);
                     // Only this subset may take an extra base on a marginal forecast.
-                    flight.try_close_advance = rand::gen_range(0, 100) < 35;
                     // Roll once per batted ball so the chance is independent of the frame rate.
                     flight.try_dive = rand::gen_range(0, 32) == 0;
                     self.phase = match flight.advance(self.time - self.pitch.duration) {
