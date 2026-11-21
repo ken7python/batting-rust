@@ -81,9 +81,9 @@ impl Play {
                 if let Some(hit) = evaluated.filter(|g| !bounced && g.contact != Contact::Miss) {
                     self.contact = Some(hit);
                     let mut flight = Flight::new(self.pitch.crossing, hit, self.park);
-                    // Only this subset may take an extra base on a marginal forecast.
-                    // Roll once per batted ball so the chance is independent of the frame rate.
+                    // Roll once per batted ball so dive odds are independent of frame rate.
                     flight.try_dive = rand::gen_range(0, 32) == 0;
+                    flight.try_infield_dive = rand::gen_range(0, 3) == 0;
                     self.phase = match flight.advance(self.time - self.pitch.duration) {
                         Some(outcome) => {
                             Phase::Result(batted_ball_result(outcome, self.contact, &flight))
@@ -256,6 +256,7 @@ mod tests {
             play.advance(play.pitch.duration - play.time + 0.001);
             if let Phase::Flight(flight) = &mut play.phase {
                 flight.try_dive = false;
+                flight.try_infield_dive = false;
             }
             for _ in 0..1200 {
                 play.advance(1.0 / 60.0);
