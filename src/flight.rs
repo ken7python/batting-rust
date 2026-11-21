@@ -107,7 +107,7 @@ impl Flight {
             .clamp(0.0, 1.0);
         let squared_quality = quality * quality;
         let speed = if strong {
-            35.0 + 32.0 * squared_quality
+            24.0 + 39.0 * squared_quality
         } else {
             29.0 + 10.0 * squared_quality - 3.0 * aim_error
         };
@@ -127,7 +127,7 @@ impl Flight {
             -horizontal.cos() * vertical.cos(),
         ) * speed;
         let landing = airborne_landing(crossing.extend(0.0), velocity);
-        let confident = strong && fair(landing) && landing.xz().length() >= 115.0;
+        let confident = strong && fair(landing) && landing.xz().length() >= 150.0;
         Self {
             position: crossing.extend(0.0),
             velocity,
@@ -457,7 +457,7 @@ mod tests {
         for (height, angles, distances, homer) in [
             (-0.85, -25.0..-23.0, 0.0..4.0, false),
             (-0.15, 2.0..4.0, 35.0..65.0, false),
-            (0.15, 22.0..25.0, 140.0..200.0, true),
+            (0.15, 22.0..25.0, 150.0..161.0, true),
             (0.85, 57.0..60.0, 40.0..75.0, false),
         ] {
             let swing = Swing {
@@ -487,7 +487,7 @@ mod tests {
     #[test]
     fn cursor_accuracy_changes_carry_at_the_same_swing_time() {
         use crate::batting::{SWING_LEAD, Swing, grade};
-        for (error, expected_carry) in [(0.0, 148.0..174.0), (0.5, 74.0..118.0), (0.9, 35.0..48.0)]
+        for (error, expected_carry) in [(0.0, 150.0..160.0), (0.5, 74.0..118.0), (0.9, 35.0..48.0)]
         {
             let swing = Swing {
                 time: 0.5 - SWING_LEAD,
@@ -540,6 +540,36 @@ mod tests {
     }
 
     #[test]
+    fn confident_homers_land_near_150_to_160_metres_in_both_parks() {
+        use crate::batting::{SWING_LEAD, Swing, grade};
+        for park in [Park::Central, Park::Sunset] {
+            let mut longest = 0.0_f32;
+            let mut shortest = f32::INFINITY;
+            for crossing in [CENTER, vec2(0.12, 0.60), vec2(-0.12, 1.15)] {
+                for y in -30..=30 {
+                    for timing in [-0.014, 0.0, 0.014] {
+                        let swing = Swing {
+                            time: 0.5 - SWING_LEAD + timing,
+                            aim: crossing - Vec2::Y * (y as f32 * 0.002),
+                        };
+                        let hit = grade(swing, 0.5, crossing);
+                        let mut flight = Flight::new(crossing, hit, park);
+                        if flight.confident {
+                            let outcome = (0..1200).find_map(|_| flight.advance(STEP));
+                            assert_eq!(outcome, Some(Outcome::Homer));
+                            let distance = flight.position.xz().length();
+                            longest = longest.max(distance);
+                            shortest = shortest.min(distance);
+                        }
+                    }
+                }
+            }
+            assert!((150.0..=160.0).contains(&longest), "{park:?}: {longest} m");
+            assert!(shortest >= 150.0, "{park:?}: {shortest} m");
+        }
+    }
+
+    #[test]
     fn clearing_the_fence_keeps_the_ball_in_flight_until_landing() {
         let ideal = Grade {
             contact: Contact::Barrel,
@@ -554,7 +584,7 @@ mod tests {
                 assert!(flight.position.xz().length() >= Park::Central.fence().0);
                 let result = (0..1200).find_map(|_| flight.advance(STEP));
                 assert_eq!(result, Some(Outcome::Homer));
-                assert!(flight.position.xz().length() >= 115.0);
+                assert!(flight.position.xz().length() >= 150.0);
                 return;
             }
         }
