@@ -780,7 +780,7 @@ mod tests {
                 CENTER,
                 Grade {
                     timing: 0.0,
-                    offset: Vec2::ZERO,
+                    offset: Vec2::Y * 0.015,
                     contact: Contact::Barrel,
                 },
                 Park::Central,
