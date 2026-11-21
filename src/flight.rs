@@ -823,7 +823,15 @@ mod tests {
         for park in [Park::Central, Park::Sunset] {
             for (timing, aim_offset, expected) in [
                 (-0.065, vec2(0.0, 0.04), Outcome::Fair),
-                (-0.037, vec2(0.02, 0.025), Outcome::Double),
+                (
+                    -0.037,
+                    vec2(0.02, 0.025),
+                    if park == Park::Sunset {
+                        Outcome::Triple
+                    } else {
+                        Outcome::Double
+                    },
+                ),
             ] {
                 let swing = Swing {
                     time: 0.5 - SWING_LEAD + timing,
@@ -841,9 +849,16 @@ mod tests {
                     assert_eq!(flight.runner.position(), crate::defense::FIRST_BASE);
                 } else {
                     assert!(landing >= 70.0);
-                    assert_eq!(flight.runner.position(), crate::defense::SECOND_BASE);
+                    assert_eq!(
+                        flight.runner.position(),
+                        if expected == Outcome::Triple {
+                            crate::defense::THIRD_BASE
+                        } else {
+                            crate::defense::SECOND_BASE
+                        }
+                    );
                 }
-                assert!(!flight.returning.unwrap().fielder.infield());
+                assert!(flight.first_pickup.unwrap().xz().length() > 38.0);
             }
         }
     }

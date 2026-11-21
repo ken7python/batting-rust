@@ -82,9 +82,6 @@ impl Defense {
     }
 
     pub fn chase(&mut self, position: Vec3, velocity: Vec3, elapsed: f32, dt: f32, rolling: bool) {
-        if elapsed < 0.20 {
-            return;
-        }
         let fly_ball = !rolling && position.y + velocity.y.max(0.0).powi(2) / 19.62 >= 5.5;
         let lead = if rolling {
             // Keep the target within pickup range so the fielder cannot shadow the ball forever.
@@ -113,9 +110,6 @@ impl Defense {
         // alleys still require lateral coverage from the shallow alignment.
         let bearing = target.x.abs().atan2(-target.y);
         let direct_fly = fly_ball && (bearing <= 0.19 || (0.45..=0.71).contains(&bearing));
-        if !rolling && !direct_fly && !fielder.infield() && elapsed < 0.31 {
-            return;
-        }
         let speed = match fielder {
             Fielder::Pitcher => PLAYER_SPEED,
             _ if fielder.infield() => 12.0,
@@ -143,8 +137,14 @@ impl Defense {
         } else {
             target
         };
-        self.move_toward(fielder, target, speed * dt);
-        self.cover_bases(fielder, None, dt);
+        let startup = if fielder.infield() || direct_fly || rolling {
+            0.40
+        } else {
+            0.62
+        };
+        let stride = (elapsed / startup).clamp(0.0, 1.0);
+        self.move_toward(fielder, target, speed * stride * dt);
+        self.cover_bases(fielder, None, dt * stride);
         self.chasing = Some(fielder);
     }
 
