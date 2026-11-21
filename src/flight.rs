@@ -11,9 +11,7 @@ pub const STEP: f64 = 1.0 / 120.0;
 // Speed up ball travel without increasing its range or speeding up runners.
 const BALL_TEMPO: f32 = 1.50;
 const GROUND_SPEED_RETENTION: f32 = 0.85;
-const SAFE_ADVANCE_MARGIN: f64 = 0.25;
-const SHALLOW_HIT_ADVANCE_MARGIN: f64 = 1.40;
-const SLOW_OUTFIELD_PICKUP: f32 = 0.75;
+const SAFE_ADVANCE_MARGIN: f64 = 0.10;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Outcome {
@@ -98,11 +96,9 @@ pub struct Flight {
     pub runner: Runner,
     pub ground_contact: Option<GroundContact>,
     first_pickup: Option<Vec3>,
-    loose_in_outfield: f32,
     park: Park,
     rolling: bool,
     hit_wall: bool,
-    high_arc: bool,
     accumulator: f64,
 }
 
@@ -162,11 +158,9 @@ impl Flight {
             runner: Runner::default(),
             ground_contact: None,
             first_pickup: None,
-            loose_in_outfield: 0.0,
             park,
             rolling: false,
             hit_wall: false,
-            high_arc: angle_degrees >= 24.0,
             accumulator: 0.0,
         }
     }
@@ -229,18 +223,7 @@ impl Flight {
                 self.runner = advancing;
                 return None;
             }
-            if advancing.target() == 3 && !self.can_stretch_hit() {
-                return None;
-            }
-            let (ball_time, slow_pickup) = self.time_to_defend_next_base();
-            // Be conservative about stretching a ball that reached the ground in the infield.
-            let margin = if advancing.target() == 2 && self.landed_in_infield() && !slow_pickup {
-                SHALLOW_HIT_ADVANCE_MARGIN
-            } else {
-                SAFE_ADVANCE_MARGIN
-            };
-            let can_advance = self.can_stretch_hit() || (advancing.target() == 2 && slow_pickup);
-            if can_advance && ball_time >= advancing.remaining_time() + margin {
+            if self.time_to_defend_next_base() >= advancing.remaining_time() + SAFE_ADVANCE_MARGIN {
                 self.runner = advancing;
             }
         }
@@ -256,32 +239,6 @@ impl Flight {
                         >= crate::defense::SECOND_BASE.length_squared()
             }
         }
-    }
-
-    fn landed_in_infield(&self) -> bool {
-        self.ground_contact.is_some_and(|contact| {
-            contact.position.xz().length_squared() < crate::defense::SECOND_BASE.length_squared()
-        })
-    }
-
-    fn slow_outfield_pickup(&self) -> bool {
-        self.landed_in_infield()
-            && self.loose_in_outfield >= SLOW_OUTFIELD_PICKUP
-            && self.returning.is_some_and(|throw| !throw.fielder.infield())
-    }
-
-    fn can_stretch_hit(&self) -> bool {
-        let point = self.batted_point().xz();
-        let depth = self.park.fence().0;
-        let deep_arc = self.high_arc
-            && (self.hit_wall
-                || self
-                    .ground_contact
-                    .is_some_and(|contact| contact.position.xz().length() >= depth * 0.74));
-        // The gaps sit between center field and the two corner outfielders.
-        let bearing = point.x.abs().atan2(-point.y);
-        let through_gap = (0.23..=0.44).contains(&bearing) && point.length() >= depth * 0.72;
-        deep_arc || through_gap
     }
 
     fn step_throw(&mut self, dt: f32) -> Option<Outcome> {
@@ -317,12 +274,12 @@ impl Flight {
         None
     }
 
-    fn time_to_defend_next_base(&self) -> (f64, bool) {
+    fn time_to_defend_next_base(&self) -> f64 {
         let next = self.runner.target() + 1;
         if let Some(mut returning) = self.returning {
             let remaining = returning.remaining();
             if returning.base == next {
-                return (f64::from(remaining), self.slow_outfield_pickup());
+                return f64::from(remaining);
             }
             let mut defense = self.defense;
             returning.advance(&mut defense, remaining);
@@ -332,10 +289,7 @@ impl Flight {
                 &defense,
                 next,
             );
-            return (
-                f64::from(remaining + relay.remaining()),
-                self.slow_outfield_pickup(),
-            );
+            return f64::from(remaining + relay.remaining());
         }
 
         // Forecast the pickup using the same physics as the live play.
@@ -347,13 +301,10 @@ impl Flight {
                 break;
             }
             if let Some(returning) = forecast.returning {
-                return (
-                    f64::from(step) * STEP + f64::from(returning.remaining()),
-                    forecast.slow_outfield_pickup(),
-                );
+                return f64::from(step) * STEP + f64::from(returning.remaining());
             }
         }
-        (0.0, false)
+        0.0
     }
 
     fn step_batted_ball(&mut self, dt: f32) -> Option<Outcome> {
@@ -446,9 +397,6 @@ impl Flight {
 
     fn roll(&mut self, dt: f32) {
         self.position += self.velocity * dt;
-        if self.position.xz().length_squared() >= crate::defense::SECOND_BASE.length_squared() {
-            self.loose_in_outfield += dt;
-        }
         let fence_radius = self.park.fence().0;
         if self.position.xz().length_squared() >= fence_radius * fence_radius {
             let stop = self.position.xz().normalize() * fence_radius;
@@ -637,7 +585,6 @@ mod tests {
                 );
                 assert!(pickup.x * timing.signum() as f32 > 5.0);
                 assert!(!flight.hit_wall);
-                assert!(flight.can_stretch_hit());
             }
         }
     }
@@ -738,7 +685,7 @@ mod tests {
         };
         for (park, expected) in [
             (Park::Sunset, Outcome::Homer),
-            (Park::Central, Outcome::HardFair),
+            (Park::Central, Outcome::BaseOut(Fielder::Third)),
         ] {
             let mut flight = Flight::new(CENTER, grade, park);
             flight.confident = false; // This fixture replaces the initially predicted homer.
@@ -808,10 +755,7 @@ mod tests {
                     Some(expected),
                     "{park:?}, timing {timing}"
                 );
-                assert!(flight.landed_in_infield());
-                assert!(!flight.can_stretch_hit());
                 assert!(!flight.returning.unwrap().fielder.infield());
-                assert_eq!(flight.slow_outfield_pickup(), expected == Outcome::Double);
                 assert_eq!(flight.runner.position(), base);
             }
         }
