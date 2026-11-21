@@ -820,11 +820,11 @@ mod tests {
     }
 
     #[test]
-    fn third_baseman_retires_routine_grounders_and_holds_late_singles_at_first() {
+    fn third_baseman_fields_routine_grounders_and_left_fielder_takes_hits_behind_him() {
         use crate::batting::{SWING_LEAD, Swing, grade};
-        for (offset_y, expected, target) in [
-            (0.020, Outcome::GroundOut(Fielder::Third), 1),
-            (0.0, Outcome::Fair, 2),
+        for (offset_y, expected, fielder, target) in [
+            (0.020, Outcome::GroundOut(Fielder::Third), Fielder::Third, 1),
+            (0.0, Outcome::Fair, Fielder::Left, 2),
         ] {
             let swing = Swing {
                 time: 0.5 - SWING_LEAD - 0.0936,
@@ -839,7 +839,7 @@ mod tests {
             });
             assert_eq!(result, Some(expected));
             let throw = flight.returning.unwrap();
-            assert_eq!((throw.fielder, throw.base), (Fielder::Third, target));
+            assert_eq!((throw.fielder, throw.base), (fielder, target));
             if expected == Outcome::Fair {
                 assert_eq!(flight.runner.position(), crate::defense::FIRST_BASE);
             }
@@ -930,7 +930,7 @@ mod tests {
     }
 
     #[test]
-    fn a_comebacker_is_a_pitcher_out_but_a_gap_hit_can_reach_second() {
+    fn outfield_throw_holds_a_gap_hit_to_a_single_unless_the_runner_beats_it() {
         for park in [Park::Central, Park::Sunset] {
             for (timing, offset, expected) in [
                 (
@@ -938,7 +938,7 @@ mod tests {
                     vec2(0.072, 0.020),
                     Outcome::GroundOut(Fielder::Pitcher),
                 ),
-                (-0.075, vec2(0.0, -0.024), Outcome::Double),
+                (-0.075, vec2(0.0, -0.024), Outcome::Fair),
             ] {
                 let hit = Grade {
                     contact: Contact::Touch,
@@ -953,9 +953,20 @@ mod tests {
                         }
                         flight.advance(STEP)
                     });
+                    let expected = if expected == Outcome::Fair && park == Park::Sunset && tap {
+                        Outcome::Double
+                    } else {
+                        expected
+                    };
                     assert_eq!(result, Some(expected), "{park:?}, tap={tap}");
-                    if expected == Outcome::Double {
-                        assert_eq!(flight.runner.position(), crate::defense::SECOND_BASE);
+                    if expected.is_hit() {
+                        let bag = if expected == Outcome::Double {
+                            crate::defense::SECOND_BASE
+                        } else {
+                            crate::defense::FIRST_BASE
+                        };
+                        assert_eq!(flight.runner.position(), bag);
+                        assert!(!flight.returning.unwrap().fielder.infield());
                     } else {
                         assert_eq!(flight.returning.unwrap().receiver, Fielder::First);
                         assert_eq!(flight.runner.reached(), 0);
