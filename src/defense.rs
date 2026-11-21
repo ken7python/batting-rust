@@ -119,6 +119,25 @@ impl Defense {
             _ if rolling => 14.0,
             _ => 11.5,
         };
+        let spot = self.position(fielder);
+        let low_drive = velocity.y.abs() <= velocity.xz().length() * 0.35;
+        let target = if !fielder.infield() && (rolling || low_drive) {
+            // On a ball rolling toward the fielder, get in its path at the current depth.
+            let direction = velocity.xz().normalize_or_zero();
+            let ahead = (spot - position.xz()).dot(direction);
+            let intercept = position.xz() + direction * ahead;
+            let predicted = (target - position.xz()).dot(direction);
+            if ahead > 0.0
+                && (rolling || ahead >= predicted)
+                && spot.distance_squared(intercept) <= 25.0
+            {
+                intercept
+            } else {
+                target
+            }
+        } else {
+            target
+        };
         self.move_toward(fielder, target, speed * dt);
         self.cover_bases(fielder, None, dt);
         self.chasing = Some(fielder);
