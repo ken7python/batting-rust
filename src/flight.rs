@@ -108,21 +108,28 @@ impl Flight {
         let timing_fraction = (grade.timing / HIT_TIMING) as f32;
         let quality = (1.0 - 0.65 * aim_error - 0.315 * timing_fraction.abs()).clamp(0.0, 1.0);
         let contact_speed = 29.0 + 10.0 * quality * quality - 3.0 * aim_error;
+        let lift = (grade.offset.y / 0.015).clamp(0.0, 1.0);
         // Exit speed meets the ordinary contact speed at both edges of the barrel window.
         let speed = if strong {
             let centered = (1.0 - grade.offset.length() / BARREL_RADIUS).max(0.0);
             let timed = (1.0 - (grade.timing.abs() / ON_TIME_WINDOW) as f32).max(0.0);
-            contact_speed + 21.5 * centered * timed.powi(3)
+            contact_speed + (6.0 + 7.0 * lift) * centered * timed.powi(3)
         } else {
             contact_speed
         };
         let horizontal = (timing_fraction * 0.945 + grade.offset.x * 0.48).clamp(-1.18, 1.18);
         // Swing offsets are cursor minus ball. A ball above the cursor lifts.
         let height = (-grade.offset.y / MEET_RADIUS).clamp(-1.0, 1.0);
-        let angle_degrees = if height < 0.0 {
+        let ordinary_angle = if height < 0.0 {
             (16.0 + 84.0 * height).max(-24.0)
         } else {
             16.0 + 50.0 * height
+        };
+        // In the core, aim high to lift the ball or hold center or lower for a line drive.
+        let angle_degrees = if strong {
+            8.0 + 20.0 * lift
+        } else {
+            ordinary_angle
         };
         let vertical = angle_degrees.to_radians();
         let velocity = vec3(
@@ -131,7 +138,7 @@ impl Flight {
             -horizontal.cos() * vertical.cos(),
         ) * speed;
         let landing = airborne_landing(crossing.extend(0.0), velocity);
-        let confident = strong && fair(landing) && landing.xz().length() >= 140.0;
+        let confident = strong && fair(landing) && landing.xz().length() >= 120.0;
         Self {
             position: crossing.extend(0.0),
             velocity,
@@ -463,8 +470,8 @@ mod tests {
         use crate::batting::{SWING_LEAD, Swing, grade};
         for (height, angles, distances, homer) in [
             (-0.85, -25.0..-23.0, 0.0..4.0, false),
-            (-0.15, 2.0..4.0, 35.0..65.0, false),
-            (0.15, 22.0..25.0, 140.0..150.0, true),
+            (-0.15, 27.0..29.0, 120.0..140.0, true),
+            (0.15, 7.0..9.0, 45.0..70.0, false),
             (0.85, 57.0..60.0, 40.0..75.0, false),
         ] {
             let swing = Swing {
@@ -482,19 +489,21 @@ mod tests {
             let carry = airborne_landing(flight.position, flight.velocity)
                 .xz()
                 .length();
-            let (result, _) = simulate(1.0 / 60.0, hit, Park::Central);
             assert!(
                 distances.contains(&carry),
                 "height {height}, carry {carry} m"
             );
-            assert_eq!(result == Outcome::Homer, homer);
+            for park in [Park::Central, Park::Sunset] {
+                let (result, _) = simulate(1.0 / 60.0, hit, park);
+                assert_eq!(result == Outcome::Homer, homer, "{park:?}, height {height}");
+            }
         }
     }
 
     #[test]
     fn cursor_accuracy_changes_carry_at_the_same_swing_time() {
         use crate::batting::{SWING_LEAD, Swing, grade};
-        for (error, expected_carry) in [(0.0, 140.0..150.0), (0.5, 55.0..70.0), (0.9, 35.0..48.0)] {
+        for (error, expected_carry) in [(0.0, 50.0..60.0), (0.5, 30.0..35.0), (0.9, 35.0..48.0)] {
             let swing = Swing {
                 time: 0.5 - SWING_LEAD,
                 aim: CENTER + Vec2::X * MEET_RADIUS * error,
@@ -518,7 +527,7 @@ mod tests {
             for timing in [-0.020, 0.020] {
                 let swing = Swing {
                     time: 0.5 - SWING_LEAD + timing,
-                    aim: CENTER + Vec2::Y * 0.01,
+                    aim: CENTER - Vec2::Y * 0.007,
                 };
                 let hit = grade(swing, 0.5, CENTER);
                 assert_eq!(hit.contact, Contact::Barrel);
@@ -528,10 +537,10 @@ mod tests {
                 assert!(!flight.returning.unwrap().fielder.infield());
                 let pickup = flight.first_pickup.unwrap().xz();
                 assert!(
-                    (55.0..75.0).contains(&pickup.length()),
+                    (40.0..75.0).contains(&pickup.length()),
                     "{park:?}: {pickup:?}"
                 );
-                assert!(pickup.x * timing.signum() as f32 > 8.0);
+                assert!(pickup.x * timing.signum() as f32 > 5.0);
                 assert!(!flight.hit_wall);
             }
         }
@@ -544,7 +553,7 @@ mod tests {
             Grade {
                 contact: Contact::Barrel,
                 timing: 0.0,
-                offset: Vec2::ZERO,
+                offset: Vec2::Y * 0.015,
             },
             Park::Central,
         );
@@ -552,7 +561,7 @@ mod tests {
         flight.advance(0.5);
         assert!(flight.runner.position().length() > 0.5);
         assert!(flight.runner.position().length() < 2.0);
-        assert!(flight.position.z < -30.0);
+        assert!(flight.position.z < -28.0);
     }
 
     #[test]
@@ -560,7 +569,7 @@ mod tests {
         let ideal = Grade {
             contact: Contact::Barrel,
             timing: 0.0,
-            offset: Vec2::ZERO,
+            offset: Vec2::Y * 0.015,
         };
         let (a, p) = simulate(1.0 / 30.0, ideal, Park::Central);
         let (b, q) = simulate(1.0 / 144.0, ideal, Park::Central);
@@ -568,11 +577,11 @@ mod tests {
         assert_eq!(a, b);
         assert_eq!(p, q);
         assert!((p.y - BALL_RADIUS).abs() < 1e-5);
-        assert!(p.xz().length() > Park::Central.fence().0 + 35.0);
+        assert!(p.xz().length() > Park::Central.fence().0 + 25.0);
     }
 
     #[test]
-    fn confident_homers_land_near_140_to_150_metres_in_both_parks() {
+    fn confident_homers_land_near_120_to_140_metres_in_both_parks() {
         use crate::batting::{SWING_LEAD, Swing, grade};
         for park in [Park::Central, Park::Sunset] {
             let mut longest = 0.0_f32;
@@ -597,8 +606,8 @@ mod tests {
                     }
                 }
             }
-            assert!((145.0..=150.0).contains(&longest), "{park:?}: {longest} m");
-            assert!(shortest >= 140.0, "{park:?}: {shortest} m");
+            assert!((125.0..=140.0).contains(&longest), "{park:?}: {longest} m");
+            assert!(shortest >= 120.0, "{park:?}: {shortest} m");
         }
     }
 
@@ -607,7 +616,7 @@ mod tests {
         let ideal = Grade {
             contact: Contact::Barrel,
             timing: 0.0,
-            offset: Vec2::ZERO,
+            offset: Vec2::Y * 0.015,
         };
         let mut flight = Flight::new(CENTER, ideal, Park::Central);
         for _ in 0..240 {
@@ -617,7 +626,7 @@ mod tests {
                 assert!(flight.position.xz().length() >= Park::Central.fence().0);
                 let result = (0..1200).find_map(|_| flight.advance(STEP));
                 assert_eq!(result, Some(Outcome::Homer));
-                assert!(flight.position.xz().length() >= 140.0);
+                assert!(flight.position.xz().length() >= 120.0);
                 return;
             }
         }
@@ -668,7 +677,7 @@ mod tests {
                 let (outcome, end) = simulate(1.0 / 60.0, hit, park);
                 assert_eq!(hit.contact, expected_contact);
                 if timing == 0.0 && offset == Vec2::ZERO {
-                    assert_eq!(outcome, Outcome::Homer);
+                    assert_ne!(outcome, Outcome::Homer);
                 } else if expected_contact == Contact::Touch {
                     assert!(matches!(
                         outcome,
