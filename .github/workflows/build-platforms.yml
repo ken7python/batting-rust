@@ -68,6 +68,20 @@ jobs:
       - name: Verify Windows startup
         shell: pwsh
         run: |
+          # Provide OpenGL on the hosted runner without bundling Mesa in the release ZIP.
+          $MesaArchive = Join-Path $env:RUNNER_TEMP 'mesa.7z'
+          $MesaDir = Join-Path $env:RUNNER_TEMP 'mesa'
+          Invoke-WebRequest 'https://github.com/pal1000/mesa-dist-win/releases/download/26.3.0/mesa3d-26.3.0-release-msvc.7z' -OutFile $MesaArchive
+          if ((Get-FileHash $MesaArchive -Algorithm SHA256).Hash -ne 'c505fcc77e8f63a09d7ddac086591d2f542c0698d37fc9e3094685a34d0d9991') {
+              throw 'Mesa archive checksum mismatch'
+          }
+          7z x $MesaArchive "-o$MesaDir" -y
+          if ($LASTEXITCODE -ne 0) { throw 'Mesa extraction failed' }
+          $MesaOpenGL = Get-ChildItem $MesaDir -Recurse -Filter opengl32.dll |
+              Where-Object { $_.Directory.Name -eq 'x64' } | Select-Object -First 1
+          if (!$MesaOpenGL) { throw 'Mesa x64 OpenGL library was not found' }
+          Copy-Item (Join-Path $MesaOpenGL.Directory.FullName '*.dll') ./dist/windows/
+          $env:GALLIUM_DRIVER = 'llvmpipe'
           $Stderr = Join-Path $env:RUNNER_TEMP 'batting-stderr.txt'
           $Game = Start-Process -FilePath ./dist/windows/Batting.exe -RedirectStandardError $Stderr -PassThru
           try {
@@ -138,11 +152,15 @@ jobs:
           name: android-debug
           path: dist/android/batting-debug.apk
           if-no-files-found: error
-      - run: |
+      - name: Verify Android startup
+        timeout-minutes: 8
+        run: |
           sudo chmod a+rw /dev/kvm
           ./scripts/smoke-android.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: android-emulator-screenshots
-          path: dist/android/*.png
+          path: |
+            dist/android/*.png
+            target/android/emulator.log
