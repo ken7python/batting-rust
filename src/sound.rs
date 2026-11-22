@@ -65,7 +65,10 @@ impl Sounds {
                 (&self.hit, 0.40)
             }
             Outcome::Foul => (&self.foul, 0.46),
-            Outcome::FlyOut(_) | Outcome::GroundOut(_) | Outcome::BaseOut(_) => (&self.out, 0.48),
+            Outcome::FlyOut(_)
+            | Outcome::LineOut(_)
+            | Outcome::GroundOut(_)
+            | Outcome::BaseOut(_) => (&self.out, 0.48),
             Outcome::Ball | Outcome::Strike | Outcome::Whiff => (&self.glove, 0.42),
         };
         Self::play(sound, volume);

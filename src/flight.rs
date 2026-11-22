@@ -21,6 +21,7 @@ pub enum Outcome {
     Double,
     Triple,
     FlyOut(Fielder),
+    LineOut(Fielder),
     GroundOut(Fielder),
     BaseOut(Fielder),
     Foul,
@@ -36,6 +37,7 @@ impl Outcome {
             Self::HardFair | Self::Fair => "ヒット",
             Self::Double => "二塁打",
             Self::Triple => "三塁打",
+            Self::LineOut(_) => "ライナーアウト",
             Self::FlyOut(_) => "フライアウト",
             Self::GroundOut(_) => "内野ゴロアウト",
             Self::BaseOut(_) => "アウト",
@@ -48,9 +50,10 @@ impl Outcome {
 
     pub fn fielder(self) -> Option<Fielder> {
         match self {
-            Self::FlyOut(fielder) | Self::GroundOut(fielder) | Self::BaseOut(fielder) => {
-                Some(fielder)
-            }
+            Self::LineOut(fielder)
+            | Self::FlyOut(fielder)
+            | Self::GroundOut(fielder)
+            | Self::BaseOut(fielder) => Some(fielder),
             _ => None,
         }
     }
@@ -356,7 +359,10 @@ impl Flight {
             if fair(reachable) {
                 self.defense
                     .chase(reachable, self.velocity, self.elapsed, dt, false);
-                if !self.hit_wall && self.velocity.y < 0.0 {
+                let horizontal_speed = self.velocity.xz().length();
+                let liner =
+                    horizontal_speed >= 12.0 && self.velocity.y.abs() < horizontal_speed * 0.40;
+                if !self.hit_wall && (liner || self.velocity.y < 0.0) {
                     let catch = if (0.45..=2.35).contains(&reachable.y) {
                         self.defense.within_reach(reachable.xz(), true)
                     } else {
@@ -368,7 +374,11 @@ impl Flight {
                     });
                     if let Some(fielder) = catch {
                         self.position = reachable;
-                        return Some(Outcome::FlyOut(fielder));
+                        return Some(if liner {
+                            Outcome::LineOut(fielder)
+                        } else {
+                            Outcome::FlyOut(fielder)
+                        });
                     }
                 }
             }
@@ -728,6 +738,7 @@ mod tests {
                             | Outcome::Double
                             | Outcome::Triple
                             | Outcome::FlyOut(_)
+                            | Outcome::LineOut(_)
                             | Outcome::GroundOut(_)
                             | Outcome::BaseOut(_)
                     ));
@@ -891,6 +902,25 @@ mod tests {
             } else {
                 assert!(flight.ground_contact.is_none());
             }
+        }
+    }
+
+    #[test]
+    fn low_drives_caught_by_second_or_third_are_line_outs() {
+        for role in [Fielder::Second, Fielder::Third] {
+            let mut flight = Flight::new(
+                CENTER,
+                Grade {
+                    contact: Contact::Touch,
+                    timing: 0.0,
+                    offset: Vec2::ZERO,
+                },
+                Park::Central,
+            );
+            let spot = flight.defense.position(role);
+            flight.position = vec3(spot.x, 1.4, spot.y);
+            flight.velocity = vec3(0.0, -1.5, -21.0);
+            assert_eq!(flight.advance(STEP), Some(Outcome::LineOut(role)));
         }
     }
 

@@ -495,6 +495,9 @@ impl<'a> Ui<'a> {
             if session.play.result_time < 0.9 {
                 match card.outcome {
                     Outcome::Foul => self.field_call("ファール", AMBER),
+                    Outcome::LineOut(_) => {
+                        self.field_call("ライナーアウト", Color::from_rgba(255, 151, 126, 255))
+                    }
                     Outcome::FlyOut(_) | Outcome::GroundOut(_) | Outcome::BaseOut(_) => {
                         self.field_call("アウト", Color::from_rgba(255, 151, 126, 255));
                     }
