@@ -58,6 +58,7 @@ impl Fielder {
 #[derive(Clone, Copy)]
 pub struct Defense {
     pub positions: [Vec2; Fielder::ALL.len()],
+    pub moving: [bool; Fielder::ALL.len()],
     pub chasing: Option<Fielder>,
     pub diving: Option<Fielder>,
 }
@@ -76,12 +77,14 @@ impl Defense {
                 vec2(31.0, -44.0) * outfield_scale,
                 MOUND.xz(),
             ],
+            moving: [false; Fielder::ALL.len()],
             chasing: None,
             diving: None,
         }
     }
 
     pub fn chase(&mut self, position: Vec3, velocity: Vec3, elapsed: f32, dt: f32, rolling: bool) {
+        let before = self.positions;
         let fly_ball = !rolling && position.y + velocity.y.max(0.0).powi(2) / 19.62 >= 5.5;
         let lead = if rolling {
             // Keep the target within pickup range so the fielder cannot shadow the ball forever.
@@ -171,6 +174,24 @@ impl Defense {
             }
         }
         self.cover_bases(fielder, None, dt * stride);
+        for role in Fielder::ALL {
+            let spot = self.position(role);
+            if role != fielder && spot == before[role as usize] {
+                if !role.infield() {
+                    // Converge behind the primary catch point, even while an infielder is chasing.
+                    let depth = spot.length().max(target.length() + 5.0);
+                    let backup = direction * depth;
+                    self.move_toward(role, backup, 5.5 * dt);
+                } else if !matches!(role, Fielder::First | Fielder::Third)
+                    && spot != SECOND_BASE
+                    && spot != FIRST_BASE
+                {
+                    let relay = target.clamp_length_max(32.0);
+                    self.move_toward(role, relay, 2.0 * dt);
+                }
+            }
+            self.moving[role as usize] = self.position(role) != before[role as usize];
+        }
         self.chasing = Some(fielder);
     }
 
@@ -440,6 +461,29 @@ fn on_field(point: Vec2, height: f32) -> Vec3 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn adjacent_outfielders_break_together_on_both_gap_flies() {
+        for (side, corner) in [(-1.0, Fielder::Left), (1.0, Fielder::Right)] {
+            let mut defense = Defense::new(Park::Central);
+            let before = defense;
+            let dt = 1.0 / 120.0;
+            defense.chase(
+                vec3(0.0, 1.0, -0.1),
+                vec3(side * 10.0, 14.0, -28.0),
+                dt,
+                dt,
+                false,
+            );
+            for role in [corner, Fielder::Center] {
+                assert!(defense.moving[role as usize]);
+                assert!(
+                    defense.position(role).distance(vec2(side * 21.0, -64.0))
+                        < before.position(role).distance(vec2(side * 21.0, -64.0))
+                );
+            }
+        }
+    }
 
     #[test]
     fn outfield_return_speed_increases_with_distance_and_urgency() {

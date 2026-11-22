@@ -376,10 +376,7 @@ pub fn fielders(
         let chasing = defense.chasing == Some(role);
         let carrier = returning.is_some_and(|play| play.fielder == role);
         let receiving = returning.is_some_and(|play| play.receiver == role && !play.carrying());
-        let covering_first = role == Fielder::Pitcher
-            && defense.chasing == Some(Fielder::First)
-            && point.distance_squared(crate::defense::FIRST_BASE) > 0.01;
-        let running = returning.map_or(chasing || covering_first, |play| role == play.receiver);
+        let running = returning.map_or(defense.moving[role as usize], |play| role == play.receiver);
         let step = if running && catching.is_none() {
             (time * 23.0).sin() * 0.18
         } else {
