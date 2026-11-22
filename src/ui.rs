@@ -43,7 +43,7 @@ impl PreviewTiming {
 
 fn hit_accent(outcome: Outcome) -> Option<Color> {
     match outcome {
-        Outcome::Fair => Some(AIM_CALL_COLOR),
+        Outcome::Fair | Outcome::InfieldHit { .. } => Some(AIM_CALL_COLOR),
         Outcome::HardFair => Some(Color::from_rgba(112, 239, 226, 255)),
         Outcome::Double => Some(Color::from_rgba(142, 200, 255, 255)),
         Outcome::Triple => Some(Color::from_rgba(255, 152, 107, 255)),

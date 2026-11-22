@@ -17,6 +17,7 @@ const SAFE_ADVANCE_MARGIN: f64 = 0.10;
 pub enum Outcome {
     Homer,
     HardFair,
+    InfieldHit { strong: bool },
     Fair,
     Double,
     Triple,
@@ -35,6 +36,7 @@ impl Outcome {
         match self {
             Self::Homer => "ホームラン",
             Self::HardFair | Self::Fair => "ヒット",
+            Self::InfieldHit { .. } => "内野安打",
             Self::Double => "二塁打",
             Self::Triple => "三塁打",
             Self::LineOut(_) => "ライナーアウト",
@@ -61,7 +63,12 @@ impl Outcome {
     pub fn is_hit(self) -> bool {
         matches!(
             self,
-            Self::Homer | Self::Triple | Self::Double | Self::HardFair | Self::Fair
+            Self::Homer
+                | Self::Triple
+                | Self::Double
+                | Self::HardFair
+                | Self::Fair
+                | Self::InfieldHit { .. }
         )
     }
 
@@ -70,8 +77,8 @@ impl Outcome {
             Self::Homer => 500,
             Self::Triple => 400,
             Self::Double => 300,
-            Self::HardFair => 250,
-            Self::Fair => 100,
+            Self::HardFair | Self::InfieldHit { strong: true } => 250,
+            Self::Fair | Self::InfieldHit { strong: false } => 100,
             Self::Ball => 25,
             _ => 0,
         }
@@ -99,6 +106,7 @@ pub struct Flight {
     pub runner: Runner,
     pub ground_contact: Option<GroundContact>,
     first_pickup: Option<Vec3>,
+    infield_pickup: bool,
     park: Park,
     rolling: bool,
     hit_wall: bool,
@@ -161,6 +169,7 @@ impl Flight {
             runner: Runner::default(),
             ground_contact: None,
             first_pickup: None,
+            infield_pickup: false,
             park,
             rolling: false,
             hit_wall: false,
@@ -436,6 +445,7 @@ impl Flight {
             }
             self.returning = Some(throw);
             self.first_pickup = Some(self.position);
+            self.infield_pickup = fielder.infield();
             self.velocity = Vec3::ZERO;
         }
     }
@@ -446,6 +456,9 @@ impl Flight {
 
     fn hit_at_base(&self) -> Outcome {
         match self.runner.reached() {
+            1 if self.infield_pickup => Outcome::InfieldHit {
+                strong: self.strong,
+            },
             1 if self.strong => Outcome::HardFair,
             1 => Outcome::Fair,
             2 => Outcome::Double,
@@ -988,7 +1001,7 @@ mod tests {
     fn a_grounder_is_an_out_only_when_the_throw_would_beat_the_batter() {
         for (elapsed, expected) in [
             (0.7, Outcome::GroundOut(Fielder::Second)),
-            (4.0, Outcome::Fair),
+            (4.0, Outcome::InfieldHit { strong: false }),
         ] {
             let mut flight = Flight::new(
                 CENTER,
@@ -1019,7 +1032,7 @@ mod tests {
             assert_eq!(outcome, Some(expected));
             assert!(threw);
             let throw = flight.returning.unwrap();
-            assert_eq!(throw.base, if expected == Outcome::Fair { 2 } else { 1 });
+            assert_eq!(throw.base, if expected.is_hit() { 2 } else { 1 });
             assert!(flight.position.xz().abs_diff_eq(throw.target, 0.01));
             assert!(
                 flight
@@ -1044,7 +1057,7 @@ mod tests {
             }
             flight.advance(STEP)
         });
-        assert_eq!(result, Some(Outcome::Fair));
+        assert_eq!(result, Some(Outcome::InfieldHit { strong: false }));
         let throw = flight.returning.unwrap();
         assert_eq!((throw.fielder, throw.base), (Fielder::Third, 1));
         assert_eq!(flight.runner.position(), crate::defense::FIRST_BASE);
@@ -1186,7 +1199,7 @@ mod tests {
         for park in [Park::Central, Park::Sunset] {
             for (runner_time, expected) in [
                 (1.20, Outcome::GroundOut(Fielder::Pitcher)),
-                (1.48, Outcome::Fair),
+                (1.48, Outcome::InfieldHit { strong: false }),
             ] {
                 let mut flight = Flight::new(
                     CENTER,
