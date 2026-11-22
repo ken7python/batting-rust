@@ -92,7 +92,17 @@ impl Defense {
                 .clamp(0.0, 1.7)
                 * 0.90
         };
-        let target = position.xz() + velocity.xz() * lead;
+        let direction = velocity.xz().normalize_or_zero();
+        let corner_fly = fly_ball && direction.x.abs() >= 0.45 && direction.y < 0.0;
+        let target = if corner_fly {
+            // Include air drag when looking beyond the usual short intercept horizon.
+            let height = position.y - 1.25;
+            let hang =
+                (velocity.y + (velocity.y * velocity.y + 19.62 * height).max(0.0).sqrt()) / 9.81;
+            position.xz() + velocity.xz() * hang / (1.0 + 0.0023 * velocity.length() * hang)
+        } else {
+            position.xz() + velocity.xz() * lead
+        };
         let depth = if rolling { position.z } else { target.y };
         let fielder = Fielder::ALL
             .into_iter()
@@ -113,14 +123,14 @@ impl Defense {
         let speed = match fielder {
             Fielder::Pitcher => PLAYER_SPEED,
             _ if fielder.infield() => 12.0,
-            _ if direct_fly => 12.5,
+            _ if direct_fly || corner_fly => 12.5,
             _ if !rolling && target.length() > self.position(fielder).length() + 1.0 => 8.0,
             _ if rolling => 14.0,
             _ => 11.5,
         };
         let spot = self.position(fielder);
         let low_drive = velocity.y.abs() <= velocity.xz().length() * 0.35;
-        let target = if !fielder.infield() && (rolling || low_drive) {
+        let target = if !fielder.infield() && (rolling || low_drive) && !corner_fly {
             // On a ball rolling toward the fielder, get in its path at the current depth.
             let direction = velocity.xz().normalize_or_zero();
             let ahead = (spot - position.xz()).dot(direction);
@@ -143,7 +153,23 @@ impl Defense {
             0.62
         };
         let stride = (elapsed / startup).clamp(0.0, 1.0);
-        self.move_toward(fielder, target, speed * stride * dt);
+        let pursuit_stride = if corner_fly { 1.0 } else { stride.max(0.30) };
+        self.move_toward(fielder, target, speed * pursuit_stride * dt);
+        if fielder.infield() && direction.y < 0.0 {
+            // Back up the infielder along the ball's path at outfield depth.
+            let backup = [Fielder::Left, Fielder::Center, Fielder::Right]
+                .into_iter()
+                .min_by(|&a, &b| {
+                    let miss = |f| (self.position(f) - position.xz()).perp_dot(direction).abs();
+                    miss(a).total_cmp(&miss(b))
+                })
+                .unwrap();
+            let spot = self.position(backup);
+            let ahead = (spot - position.xz()).dot(direction);
+            if ahead > 0.0 {
+                self.move_toward(backup, position.xz() + direction * ahead, 10.0 * dt);
+            }
+        }
         self.cover_bases(fielder, None, dt * stride);
         self.chasing = Some(fielder);
     }

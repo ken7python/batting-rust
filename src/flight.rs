@@ -738,12 +738,35 @@ mod tests {
     }
 
     #[test]
-    fn an_infield_grounder_can_be_a_double_when_outfield_pickup_is_delayed() {
+    fn right_fielder_breaks_back_at_contact_and_catches_a_high_fly() {
+        for park in [Park::Central, Park::Sunset] {
+            let mut flight = Flight::new(
+                CENTER,
+                Grade {
+                    contact: Contact::Touch,
+                    timing: 0.0,
+                    offset: Vec2::ZERO,
+                },
+                park,
+            );
+            flight.velocity = vec3(13.5, 17.0, -20.0);
+            let start = flight.defense.position(Fielder::Right);
+            assert_eq!(flight.advance(STEP), None);
+            assert!(flight.defense.position(Fielder::Right).length() > start.length());
+            assert_eq!(
+                (0..1200).find_map(|_| flight.advance(STEP)),
+                Some(Outcome::FlyOut(Fielder::Right))
+            );
+        }
+    }
+
+    #[test]
+    fn left_field_backup_holds_grounders_through_the_infield_to_singles() {
         use crate::batting::{SWING_LEAD, Swing, grade};
         for park in [Park::Central, Park::Sunset] {
             for (timing, aim_height, expected, base) in [
                 (-0.070, 0.035, Outcome::Fair, crate::defense::FIRST_BASE),
-                (-0.055, 0.035, Outcome::Double, crate::defense::SECOND_BASE),
+                (-0.055, 0.035, Outcome::Fair, crate::defense::FIRST_BASE),
             ] {
                 let swing = Swing {
                     time: 0.5 - SWING_LEAD + timing,
@@ -771,7 +794,7 @@ mod tests {
                     -0.037,
                     vec2(0.02, 0.025),
                     if park == Park::Sunset {
-                        Outcome::Triple
+                        Outcome::BaseOut(Fielder::Third)
                     } else {
                         Outcome::Double
                     },
@@ -793,14 +816,7 @@ mod tests {
                     assert_eq!(flight.runner.position(), crate::defense::FIRST_BASE);
                 } else {
                     assert!(landing >= 70.0);
-                    assert_eq!(
-                        flight.runner.position(),
-                        if expected == Outcome::Triple {
-                            crate::defense::THIRD_BASE
-                        } else {
-                            crate::defense::SECOND_BASE
-                        }
-                    );
+                    assert!(flight.runner.reached() >= 2);
                 }
                 assert!(flight.first_pickup.unwrap().xz().length() > 38.0);
             }
