@@ -318,7 +318,8 @@ async fn game() {
                     && !(fence_was_cleared && card.outcome == Outcome::Homer)
                 {
                     if card.fielding.as_ref().is_some_and(|view| {
-                        view.returning.is_some() || matches!(card.outcome, Outcome::FlyOut(_))
+                        view.returning.is_some()
+                            || matches!(card.outcome, Outcome::FlyOut(_) | Outcome::LineOut(_))
                     }) {
                         sounds.glove();
                     }
@@ -518,7 +519,7 @@ fn draw_play(
             set_camera(&follow);
             field(play.park, stands);
             let catch = match *outcome {
-                Outcome::FlyOut(fielder) => Some((fielder, view.ball)),
+                Outcome::FlyOut(fielder) | Outcome::LineOut(fielder) => Some((fielder, view.ball)),
                 _ => None,
             };
             fielders(
